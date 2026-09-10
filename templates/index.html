@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RScan — Smart Document Scanner</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<!-- Header -->
+<header class="header">
+    <div class="header-inner">
+        <div class="logo">
+            <svg class="logo-icon" viewBox="0 0 32 32" fill="none"><rect x="4" y="2" width="24" height="28" rx="3" stroke="currentColor" stroke-width="2.2"/><line x1="9" y1="9" x2="23" y2="9" stroke="currentColor" stroke-width="1.8" opacity=".4"/><line x1="9" y1="14" x2="23" y2="14" stroke="currentColor" stroke-width="1.8" opacity=".4"/><line x1="9" y1="19" x2="18" y2="19" stroke="currentColor" stroke-width="1.8" opacity=".4"/><circle cx="12" cy="25" r="1.5" fill="currentColor" opacity=".4"/></svg>
+            <span class="logo-text">RScan</span>
+        </div>
+        <p class="tagline">Smart Document Scanner — Like CamScanner</p>
+    </div>
+</header>
+
+<!-- Main -->
+<main class="main">
+
+    <!-- Upload Section -->
+    <section class="upload-section" id="uploadSection">
+        <div class="upload-zone" id="uploadZone">
+            <div class="upload-icon">
+                <svg viewBox="0 0 64 64" fill="none"><rect x="8" y="12" width="48" height="40" rx="4" stroke="currentColor" stroke-width="2.5"/><path d="M8 40l14-14 10 10 8-8 16 16" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><circle cx="22" cy="26" r="4" stroke="currentColor" stroke-width="2"/></svg>
+            </div>
+            <h2 class="upload-title">Upload Documents</h2>
+            <p class="upload-subtitle">Drag & drop images or PDFs here, or click to browse</p>
+            <p class="upload-formats">Supports: JPG, PNG, BMP, TIFF, WebP, PDF</p>
+            <input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.bmp,.tif,.tiff,.webp,.pdf" hidden>
+            <div class="upload-buttons">
+                <button class="btn btn-primary" id="btnImages">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>
+                    Scan Images
+                </button>
+                <button class="btn btn-secondary" id="btnPdf">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                    Scan PDF
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <!-- Processing -->
+    <section class="processing-section hidden" id="processingSection">
+        <div class="spinner"></div>
+        <h2>Scanning your document...</h2>
+        <p class="processing-status" id="processingStatus">Processing 0 / 0 pages</p>
+    </section>
+
+    <!-- Results -->
+    <section class="results-section hidden" id="resultsSection">
+        <div class="results-header">
+            <h2>Scanned Results</h2>
+            <div class="results-actions">
+                <button class="btn btn-primary" id="btnDownloadAll">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download All
+                </button>
+                <button class="btn btn-outline" id="btnScanMore">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Scan More
+                </button>
+            </div>
+        </div>
+        <div class="results-grid" id="resultsGrid"></div>
+    </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="footer">
+    <p>RScan Document Scanner &mdash; Python + OpenCV + Flask</p>
+</footer>
+
+<script src="{{ url_for('static', filename='js/app.js') }}"></script>
+</body>
+</html>

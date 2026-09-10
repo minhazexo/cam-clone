@@ -1,0 +1,82 @@
+/* ── Reset & Base ───────────────────────────────────────────────────── */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{font-size:16px;scroll-behavior:smooth}
+body{font-family:'Inter',system-ui,-apple-system,sans-serif;background:#f0f2f5;color:#1a1a2e;min-height:100vh;display:flex;flex-direction:column}
+
+/* ── Header ────────────────────────────────────────────────────────── */
+.header{background:linear-gradient(135deg,#0f3460 0%,#16213e 100%);color:#fff;padding:1rem 1.5rem;position:sticky;top:0;z-index:100;box-shadow:0 2px 12px rgba(0,0,0,.15)}
+.header-inner{max-width:1100px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:1rem;flex-wrap:wrap}
+.logo{display:flex;align-items:center;gap:.6rem}
+.logo-icon{width:32px;height:32px;color:#4cc9f0}
+.logo-text{font-size:1.5rem;font-weight:700;letter-spacing:-.02em}
+.tagline{font-size:.85rem;opacity:.7;font-weight:400}
+
+/* ── Main ──────────────────────────────────────────────────────────── */
+.main{flex:1;max-width:1100px;width:100%;margin:0 auto;padding:2rem 1.5rem}
+
+/* ── Upload Zone ───────────────────────────────────────────────────── */
+.upload-section{display:flex;justify-content:center;align-items:center;min-height:60vh}
+.upload-zone{background:#fff;border:2.5px dashed #c5cae9;border-radius:20px;padding:3rem 2rem;text-align:center;cursor:pointer;transition:all .25s ease;width:100%;max-width:600px}
+.upload-zone:hover,.upload-zone.dragover{border-color:#3f51b5;background:#e8eaf6;transform:translateY(-2px);box-shadow:0 8px 30px rgba(63,81,181,.15)}
+.upload-icon{width:80px;height:80px;margin:0 auto 1.2rem;color:#3f51b5;opacity:.7}
+.upload-title{font-size:1.5rem;font-weight:700;color:#1a1a2e;margin-bottom:.5rem}
+.upload-subtitle{font-size:.95rem;color:#666;margin-bottom:.3rem}
+.upload-formats{font-size:.8rem;color:#999;margin-bottom:1.5rem}
+.upload-buttons{display:flex;gap:1rem;justify-content:center;flex-wrap:wrap}
+
+/* ── Buttons ───────────────────────────────────────────────────────── */
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.7rem 1.5rem;border:none;border-radius:12px;font-size:.9rem;font-weight:600;cursor:pointer;transition:all .2s ease;font-family:inherit}
+.btn svg{width:18px;height:18px}
+.btn-primary{background:linear-gradient(135deg,#3f51b5,#5c6bc0);color:#fff;box-shadow:0 4px 14px rgba(63,81,181,.35)}
+.btn-primary:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(63,81,181,.45)}
+.btn-secondary{background:linear-gradient(135deg,#e91e63,#f06292);color:#fff;box-shadow:0 4px 14px rgba(233,30,99,.3)}
+.btn-secondary:hover{transform:translateY(-1px);box-shadow:0 6px 20px rgba(233,30,99,.4)}
+.btn-outline{background:transparent;border:2px solid #3f51b5;color:#3f51b5}
+.btn-outline:hover{background:#3f51b5;color:#fff}
+.btn-sm{padding:.5rem 1rem;font-size:.8rem;border-radius:8px}
+
+/* ── Processing ────────────────────────────────────────────────────── */
+.processing-section{display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:50vh;gap:1.5rem;text-align:center}
+.spinner{width:56px;height:56px;border:4px solid #e0e0e0;border-top-color:#3f51b5;border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.processing-section h2{font-size:1.3rem;color:#1a1a2e}
+.processing-status{color:#666;font-size:.9rem}
+
+/* ── Results ───────────────────────────────────────────────────────── */
+.results-section{animation:fadeIn .4s ease}
+.results-header{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:1rem;margin-bottom:1.5rem}
+.results-header h2{font-size:1.3rem}
+.results-actions{display:flex;gap:.75rem;flex-wrap:wrap}
+.results-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:1.25rem}
+
+.result-card{background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 2px 12px rgba(0,0,0,.08);transition:transform .2s,box-shadow .2s}
+.result-card:hover{transform:translateY(-3px);box-shadow:0 8px 25px rgba(0,0,0,.12)}
+.result-card-img{width:100%;aspect-ratio:3/4;object-fit:contain;background:#f5f5f5;display:block}
+.result-card-body{padding:1rem}
+.result-card-name{font-size:.85rem;font-weight:600;color:#333;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.result-card-meta{font-size:.75rem;color:#999;margin-top:.3rem}
+.result-card-actions{display:flex;gap:.5rem;margin-top:.75rem}
+
+/* ── PDF Result ────────────────────────────────────────────────────── */
+.result-card-pdf{display:flex;flex-direction:column;align-items:center;justify-content:center;aspect-ratio:3/4;background:linear-gradient(135deg,#fce4ec,#f3e5f5)}
+.result-card-pdf svg{width:48px;height:48px;color:#e91e63;margin-bottom:.75rem}
+
+/* ── Hidden utility ────────────────────────────────────────────────── */
+.hidden{display:none!important}
+
+/* ── Animations ────────────────────────────────────────────────────── */
+@keyframes fadeIn{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+
+/* ── Footer ────────────────────────────────────────────────────────── */
+.footer{text-align:center;padding:1.5rem;color:#999;font-size:.8rem;border-top:1px solid #e0e0e0;margin-top:auto}
+
+/* ── Responsive ────────────────────────────────────────────────────── */
+@media(max-width:640px){
+    .header-inner{flex-direction:column;text-align:center}
+    .main{padding:1.25rem 1rem}
+    .upload-zone{padding:2rem 1.2rem}
+    .upload-title{font-size:1.2rem}
+    .results-grid{grid-template-columns:1fr}
+    .results-header{flex-direction:column;text-align:center}
+    .results-actions{justify-content:center}
+}

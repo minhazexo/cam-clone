@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.env
+rscan_uploads/
+.idea/
+.vscode/
