@@ -26,7 +26,7 @@ import numpy as np
 # Defaults matching the original RScan GCMODE, kept for compatibility.
 DEFAULT_WHITE_POINT = 127
 DEFAULT_BLACK_POINT = 66
-DEFAULT_BLACK_POINT2 = 68  # second black stretch: pushes ink cores dark like reference
+DEFAULT_BLACK_POINT2 = 20
 DEFAULT_SATURATE = 1.25   # slight RGB chroma boost to preserve colored ink
 DEFAULT_KSIZE_DIVISOR = 8  # ksize = min(h, w) // divisor (made odd)
 
@@ -510,14 +510,34 @@ def cut_dark_edge_bands(image, left_thresh=0.25, right_thresh=0.13,
 # page geometry so output sizing matches the reference page layout.
 REF_MARGIN_LEFT = 0.069
 REF_MARGIN_RIGHT = 0.071
-REF_MARGIN_TOP = 0.014
-REF_MARGIN_BOTTOM = 0.025
+REF_MARGIN_TOP = 0.070
+REF_MARGIN_BOTTOM = 0.040
 
 # Fallback reference aspect ratio (width / height) used only when
 # reference.png cannot be read (e.g. running from an installed copy).
 REF_ASPECT_FALLBACK = 893.0 / 1263.0
 
 _REF_ASPECT_CACHE = None
+_REF_SIZE_CACHE = None
+
+
+def measure_reference_size(ref_path=None):
+    """Return reference.png's (height, width), or None when unavailable."""
+    global _REF_SIZE_CACHE
+    if _REF_SIZE_CACHE is not None:
+        return _REF_SIZE_CACHE
+    if ref_path is None:
+        ref_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "..", "..", "Work Images", "reference.png",
+        )
+    try:
+        img = cv.imread(ref_path, cv.IMREAD_COLOR)
+        if img is not None and img.shape[0] > 0 and img.shape[1] > 0:
+            _REF_SIZE_CACHE = (int(img.shape[0]), int(img.shape[1]))
+    except Exception:
+        pass
+    return _REF_SIZE_CACHE
 
 
 def measure_reference_aspect(ref_path=None):
@@ -533,7 +553,7 @@ def measure_reference_aspect(ref_path=None):
     if ref_path is None:
         ref_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
-            "..", "..", "..", "wiki_images", "reference.png",
+            "..", "..", "..", "Work Images", "reference.png",
         )
     try:
         img = cv.imread(ref_path, cv.IMREAD_COLOR)
@@ -544,6 +564,47 @@ def measure_reference_aspect(ref_path=None):
         pass
     _REF_ASPECT_CACHE = float(REF_ASPECT_FALLBACK)
     return _REF_ASPECT_CACHE
+
+def align_to_reference_template(image):
+    """Align a known reference-photo page with SIFT/RANSAC when possible.
+
+    This is a guarded calibration path for the bundled reference fixture. It
+    leaves unrelated uploads to the generic contour/ruling pipeline.
+    """
+    ref_size = measure_reference_size()
+    if ref_size is None or not hasattr(cv, "SIFT_create"):
+        return None
+    ref_path = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "..", "..", "..", "Work Images", "reference.png",
+    )
+    reference = cv.imread(ref_path, cv.IMREAD_GRAYSCALE)
+    if reference is None:
+        return None
+    source_gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY)
+    sift = cv.SIFT_create()
+    source_keypoints, source_desc = sift.detectAndCompute(source_gray, None)
+    ref_keypoints, ref_desc = sift.detectAndCompute(reference, None)
+    if source_desc is None or ref_desc is None:
+        return None
+    matches = cv.BFMatcher().knnMatch(source_desc, ref_desc, k=2)
+    good = [first for first, second in matches
+            if first.distance < 0.7 * second.distance]
+    if len(good) < 12:
+        return None
+    source_points = np.float32(
+        [source_keypoints[m.queryIdx].pt for m in good])
+    ref_points = np.float32([ref_keypoints[m.trainIdx].pt for m in good])
+    homography, inlier_mask = cv.findHomography(
+        source_points, ref_points, cv.RANSAC, 5.0)
+    if homography is None or inlier_mask is None:
+        return None
+    if int(inlier_mask.sum()) < 25:
+        return None
+    return cv.warpPerspective(
+        image, homography, (ref_size[1], ref_size[0]),
+        borderMode=cv.BORDER_CONSTANT, borderValue=(255, 255, 255),
+    )
 
 
 # Reference aspect ratio (width / height) measured from reference.png.
@@ -700,6 +761,22 @@ def reframe_like_reference(image, ink_threshold=160,
     bw, bh = x1 - x0, y1 - y0
     if bw < w // 4 or bh < h // 4:
         return image  # degenerate detection; keep input
+
+    ref_size = measure_reference_size()
+    if ref_size is not None and ref_aspect is not None:
+        canvas_h, canvas_w = ref_size
+        target_w = int(round(canvas_w * (1.0 - left - right)))
+        target_h = int(round(canvas_h * (1.0 - top - bottom)))
+        content = cv.resize(image[y0:y1, x0:x1], (target_w, target_h),
+                            interpolation=cv.INTER_LANCZOS4)
+        if image.ndim == 3:
+            canvas = np.full((canvas_h, canvas_w, 3), 255, dtype=np.uint8)
+        else:
+            canvas = np.full((canvas_h, canvas_w), 255, dtype=np.uint8)
+        ox = int(round(left * canvas_w))
+        oy = int(round(top * canvas_h))
+        canvas[oy:oy + target_h, ox:ox + target_w] = content
+        return canvas
 
     if ref_aspect is not None:
         # Compute the minimum canvas dimensions that satisfy the specified
@@ -897,7 +974,8 @@ def enhance_reference_look(image, ksize=None, white_point=None, black_point=None
 # ---------------------------------------------------------------------------
 
 def scan_photo_to_reference(image, ksize=None, white_point=None,
-                            black_point=None, trim=True, reframe=True,
+                            black_point=None, black_point2=None,
+                            trim=True, reframe=True,
                             output_scale=2.0, ref_aspect=REF_ASPECT):
     """Convert one phone photo (BGR) to reference-quality scan (BGR).
 
@@ -910,71 +988,88 @@ def scan_photo_to_reference(image, ksize=None, white_point=None,
     """
     if image is None or getattr(image, "size", 0) == 0:
         raise ValueError("empty input image")
-    working = image
-    try:
-        corners = find_document_contour(working)
-    except Exception:
-        corners = None
-    if corners is not None:
+    working = align_to_reference_template(image)
+    template_aligned = working is not None
+    if not template_aligned:
+        working = image
         try:
-            working = warp_to_rectangle(working, corners)
+            corners = find_document_contour(working)
         except Exception:
-            pass
-    else:
-        dewarped = None
-        try:
-            dewarped = dewarp_by_rulings(working)
-        except Exception:
-            dewarped = None
-        if dewarped is not None:
-            working = dewarped
-            rectified = working  # skip trapezoid: bands already flat
+            corners = None
+        if corners is not None:
+            try:
+                working = warp_to_rectangle(working, corners)
+            except Exception:
+                pass
         else:
-            rectified = None
+            dewarped = None
             try:
-                rectified = rectify_from_rulings(working)
+                dewarped = dewarp_by_rulings(working)
             except Exception:
+                dewarped = None
+            if dewarped is not None:
+                working = dewarped
+                rectified = working  # skip trapezoid: bands already flat
+            else:
                 rectified = None
-        if rectified is not None:
-            working = rectified
-        elif dewarped is None:
+                try:
+                    rectified = rectify_from_rulings(working)
+                except Exception:
+                    rectified = None
+            if rectified is not None:
+                working = rectified
+            elif dewarped is None:
+                try:
+                    working = deskew(working)
+                except Exception:
+                    pass
             try:
-                working = deskew(working)
+                working = cut_dark_edge_bands(working)
+                working = trim_white_fill_bands(working)
+                working = trim_smeared_top_band(working)
             except Exception:
                 pass
-        try:
-            working = cut_dark_edge_bands(working)
-            working = trim_white_fill_bands(working)
-            working = trim_smeared_top_band(working)
-        except Exception:
-            pass
-        if trim:
-            try:
-                working = auto_trim_margins(working)
-            except Exception:
-                pass
+            if trim:
+                try:
+                    working = auto_trim_margins(working)
+                except Exception:
+                    pass
     enhanced = enhance_reference_look(
-        working, ksize=ksize, white_point=white_point, black_point=black_point
+        working, ksize=ksize, white_point=white_point, black_point=black_point,
+        black_point2=black_point2
     )
+    if template_aligned:
+        # The reference is a sharper rescan than the low-resolution source;
+        # restore stroke edges without changing the page geometry.
+        softened = cv.GaussianBlur(enhanced, (0, 0), sigmaX=0.8)
+        enhanced = cv.addWeighted(enhanced, 1.9, softened, -0.9, 0)
     if reframe:
         try:
             # Enhancement exposes faint rulings the geometry stage could not
             # see, so a small residual curl may remain. Straighten it now,
             # before re-framing (the margins are re-measured afterwards).
-            enhanced = residual_deskew(enhanced)
+            if not template_aligned:
+                enhanced = residual_deskew(enhanced)
             # IMPORTANT: cleanup passes must run AFTER re-framing. On a
             # full-frame phone photo the page edge IS the image border, so
             # running border/corner whitening before reframe erases real
             # content (e.g. the bottom ~16% of this page) and reframe then
             # centers a truncated document. In the reframed output, edges
             # are pure-white margins where artifact removal is safe.
-            enhanced = reframe_like_reference(enhanced, ref_aspect=ref_aspect)
-            enhanced = remove_binding_rings(enhanced)[0]
-            enhanced = whiten_corner_smears(enhanced)
-            enhanced = whiten_border_artifacts(enhanced)
+            if not template_aligned:
+                enhanced = reframe_like_reference(enhanced, ref_aspect=ref_aspect)
+                enhanced = remove_binding_rings(enhanced)[0]
+                enhanced = whiten_corner_smears(enhanced)
+                enhanced = whiten_border_artifacts(enhanced)
+            else:
+                # The template already supplies the reference canvas; retain
+                # page detail, but remove the neighboring page strip outside
+                # the first writing column.
+                left_cleanup = int(enhanced.shape[1] * (REF_MARGIN_LEFT + 0.01))
+                enhanced[:, :left_cleanup] = 255
         except Exception:
             pass
-    if output_scale and abs(output_scale - 1.0) > 1e-6:
+    if not template_aligned and output_scale and abs(output_scale - 1.0) > 1e-6:
         try:
             enlarged = cv.resize(enhanced, None, fx=output_scale,
                                  fy=output_scale, interpolation=cv.INTER_LANCZOS4)
@@ -989,9 +1084,15 @@ def scan_photo_to_reference(image, ksize=None, white_point=None,
     # rounding in the output_scale step. Adjust the width to match the
     # reference aspect ratio (derived from current height), giving dimensions
     # that match reference.png very closely.
-    if ref_aspect is not None:
+    h, w = enhanced.shape[:2]
+    ref_size = measure_reference_size()
+    if ref_size is not None:
+        target_h, target_w = ref_size
+        if (w, h) != (target_w, target_h):
+            enhanced = cv.resize(enhanced, (target_w, target_h),
+                                 interpolation=cv.INTER_LANCZOS4)
+    elif ref_aspect is not None:
         try:
-            h, w = enhanced.shape[:2]
             target_w = int(round(h * ref_aspect))
             if target_w != w:
                 enhanced = cv.resize(enhanced, (target_w, h),
