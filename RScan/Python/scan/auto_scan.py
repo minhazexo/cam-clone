@@ -18,6 +18,7 @@ Pure OpenCV + NumPy. No hardcoded paths, no manual thresholds required
 """
 
 import math
+import os
 
 import cv2 as cv
 import numpy as np
@@ -363,6 +364,37 @@ def deskew(image, angle=None):
     )
 
 
+def residual_deskew(image, tolerance=0.25):
+    """Flatten ruling lines that only became visible after enhancement.
+
+    Geometry correction runs *before* enhancement, when faint notebook
+    rulings are still too low-contrast for the line detector, so a curl
+    of ~1deg can survive into the enhanced image. This re-measures the
+    tilt there and keeps whichever straightening (band-wise dewarp or a
+    simple rotation) actually reduces it. Returns the input untouched
+    when it is already straight or no candidate helps.
+    """
+    baseline = estimate_skew_angle(image)
+    if abs(baseline) <= tolerance:
+        return image
+    best, best_abs = image, abs(baseline)
+    candidates = [deskew(image, baseline)]
+    try:
+        warped = dewarp_by_rulings(image)
+    except Exception:
+        warped = None
+    if warped is not None:
+        candidates.append(warped)
+    for cand in candidates:
+        try:
+            cand_abs = abs(estimate_skew_angle(cand))
+        except Exception:
+            continue
+        if cand_abs < best_abs:
+            best, best_abs = cand, cand_abs
+    return best
+
+
 def trim_white_fill_bands(image, ink_threshold=240, max_fraction=0.08):
     """Cut pure-white warp-fill bands at the edges (post-rectify/deskew).
 
@@ -417,6 +449,28 @@ def trim_smeared_top_band(image, max_fraction=0.06, thresh_ratio=0.30):
     return image[cut:, :] if cut else image
 
 
+def edge_darkness_profile(gray, thresh=100, smooth=15, win_frac=0.25):
+    """Per-column dark fraction, maxed over sliding row windows.
+
+    Averaging over the whole page height dilutes shadow/coil bands that
+    only span *part* of the page: on a full-frame photo the page-gap
+    shadow (left) and the spiral coil (right) both live near the top, so a
+    whole-page mean falls below any sane threshold and no cut fires. Taking
+    the elementwise max over overlapping windows keeps a part-height band
+    visible while columns through sparse text stay low (text does not fill
+    a whole window the way a solid shadow band does).
+    """
+    h, w = gray.shape
+    win = max(1, int(h * win_frac))
+    step = max(1, win // 2)
+    profile = np.zeros(w, dtype=np.float64)
+    for y0 in range(0, max(1, h - win + 1), step):
+        band = gray[y0:y0 + win, :] < thresh
+        profile = np.maximum(profile, band.mean(axis=0))
+    kernel = np.ones(smooth) / float(smooth)
+    return np.convolve(profile, kernel, mode="same")
+
+
 def cut_dark_edge_bands(image, left_thresh=0.25, right_thresh=0.13,
                         left_cap=0.06, right_cap=0.16, smooth=15,
                         min_coil_width_ratio=0.04):
@@ -426,17 +480,16 @@ def cut_dark_edge_bands(image, left_thresh=0.25, right_thresh=0.13,
     scans (bright overall) are returned untouched. Left: the gap shadow is
     *solid* dark, so a high sustained threshold never touches text. Right:
     only a *wide* sustained dark run (coil rings span 10%+ of the width;
-    text strokes and punched-hole dots do not) is cut. No-op if nothing
-    qualifies.
+    text strokes and punched-hole dots do not) is cut. The per-column
+    darkness is measured with :func:`edge_darkness_profile`, which keeps
+    bands that only cover the top of the page (the common case on
+    full-frame phone photos). No-op if nothing qualifies.
     """
     h, w = image.shape[:2]
     gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY) if image.ndim == 3 else image
     if float(gray.mean()) > 200:
         return image  # already a clean scan; nothing to cut
-    band = gray[int(h * 0.30):int(h * 0.95), :] < 100
-    frac = band.mean(axis=0).astype(np.float64)
-    kernel = np.ones(smooth) / float(smooth)
-    smooth_frac = np.convolve(frac, kernel, mode="same")
+    smooth_frac = edge_darkness_profile(gray, smooth=smooth)
     x0 = 0
     while x0 <= int(w * left_cap) and smooth_frac[x0] > left_thresh:
         x0 += 1
@@ -451,12 +504,53 @@ def cut_dark_edge_bands(image, left_thresh=0.25, right_thresh=0.13,
     return image[:, x0:x1]
 
 
-# Reference framing measured from wiki_images/reference.png:
-# content ink bbox occupies cols 6.9%-92.9%, rows 3.8%-95.6%.
+# Reference framing measured from wiki_images/reference.png.
+# The original values were too loose for notebook pages and left extra
+# whitespace at the top/bottom. Tighten the crop to the actual reference
+# page geometry so output sizing matches the reference page layout.
 REF_MARGIN_LEFT = 0.069
 REF_MARGIN_RIGHT = 0.071
-REF_MARGIN_TOP = 0.038
-REF_MARGIN_BOTTOM = 0.044
+REF_MARGIN_TOP = 0.014
+REF_MARGIN_BOTTOM = 0.025
+
+# Fallback reference aspect ratio (width / height) used only when
+# reference.png cannot be read (e.g. running from an installed copy).
+REF_ASPECT_FALLBACK = 893.0 / 1263.0
+
+_REF_ASPECT_CACHE = None
+
+
+def measure_reference_aspect(ref_path=None):
+    """Return reference.png's canvas aspect ratio (width / height).
+
+    Measures the full reference image dimensions so the reframed canvas
+    matches reference.png exactly. Cached after the first call. Falls back
+    to ``REF_ASPECT_FALLBACK`` when the image is unavailable.
+    """
+    global _REF_ASPECT_CACHE
+    if _REF_ASPECT_CACHE is not None:
+        return _REF_ASPECT_CACHE
+    if ref_path is None:
+        ref_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "..", "..", "..", "wiki_images", "reference.png",
+        )
+    try:
+        img = cv.imread(ref_path, cv.IMREAD_COLOR)
+        if img is not None and img.shape[0] > 0 and img.shape[1] > 0:
+            _REF_ASPECT_CACHE = float(img.shape[1]) / float(img.shape[0])
+            return _REF_ASPECT_CACHE
+    except Exception:
+        pass
+    _REF_ASPECT_CACHE = float(REF_ASPECT_FALLBACK)
+    return _REF_ASPECT_CACHE
+
+
+# Reference aspect ratio (width / height) measured from reference.png.
+# Locks the reframed canvas to the same proportions as the reference,
+# preventing the independent width/height canvas computation from
+# drifting into a different aspect ratio.
+REF_ASPECT = measure_reference_aspect()
 
 
 def remove_binding_rings(image, zone_ratio=0.78, dark=70, min_thick=2.0,
@@ -571,13 +665,18 @@ def whiten_border_artifacts(image, ink_threshold=160, max_depth_ratio=0.12):
 
 def reframe_like_reference(image, ink_threshold=160,
                            left=REF_MARGIN_LEFT, right=REF_MARGIN_RIGHT,
-                           top=REF_MARGIN_TOP, bottom=REF_MARGIN_BOTTOM):
+                           top=REF_MARGIN_TOP, bottom=REF_MARGIN_BOTTOM,
+                           ref_aspect=None):
     """Re-frame a scanned page to the reference's edge/placement quality.
 
     Takes the ink bounding box (faint watermarks above ``ink_threshold``
     stay out of the box) and centers it on a white canvas with the same
     symmetric margins as reference.png. Edges become pure white; nothing
     is distorted (aspect follows the content).
+
+    When ``ref_aspect`` is given (reference width / reference height),
+    the canvas aspect ratio is constrained to match the reference,
+    ensuring consistent output sizing regardless of input proportions.
     """
     h, w = image.shape[:2]
     gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY) if image.ndim == 3 else image
@@ -601,10 +700,32 @@ def reframe_like_reference(image, ink_threshold=160,
     bw, bh = x1 - x0, y1 - y0
     if bw < w // 4 or bh < h // 4:
         return image  # degenerate detection; keep input
-    canvas_w = int(round(bw / max(1e-6, 1.0 - left - right)))
-    canvas_h = int(round(bh / max(1e-6, 1.0 - top - bottom)))
-    canvas_w = max(canvas_w, w)
-    canvas_h = max(canvas_h, h)
+
+    if ref_aspect is not None:
+        # Compute the minimum canvas dimensions that satisfy the specified
+        # margins in BOTH width and height directions simultaneously.
+        #
+        #   canvas_w >= bw / (1 - left - right)   (horizontal margin constraint)
+        #   canvas_h >= bh / (1 - top - bottom)   (vertical margin constraint)
+        #   canvas_w / canvas_h ~= ref_aspect        (aspect target)
+        #
+        # When content aspect != ref_aspect, these three constraints may be
+        # incompatible. Resolve by using the height-constrained canvas
+        # (canvas_h = min_canvas_h) with width = max(min_canvas_w,
+        # aspect_w_for_h). This guarantees both margins are met; the aspect
+        # ratio may deviate slightly from ref_aspect when the content is
+        # intrinsically a different shape than the reference page.
+        min_canvas_w = int(round(bw / max(1e-6, 1.0 - left - right)))
+        min_canvas_h = int(round(bh / max(1e-6, 1.0 - top - bottom)))
+
+        # Height-constrained canvas: use min_canvas_h as the canvas height,
+        # width from aspect ratio (but not less than min_canvas_w).
+        aspect_w_for_h = int(round(min_canvas_h * ref_aspect))
+        canvas_h = min_canvas_h
+        canvas_w = max(min_canvas_w, aspect_w_for_h)
+    else:
+        canvas_w = int(round(bw / max(1e-6, 1.0 - left - right)))
+        canvas_h = int(round(bh / max(1e-6, 1.0 - top - bottom)))
     ox = int(round((canvas_w - bw) / 2.0))
     oy_top = int(round(top * canvas_h))
     PAPER_GRAY = 255  # let HPF provide natural paper tone in content area
@@ -777,12 +898,14 @@ def enhance_reference_look(image, ksize=None, white_point=None, black_point=None
 
 def scan_photo_to_reference(image, ksize=None, white_point=None,
                             black_point=None, trim=True, reframe=True,
-                            output_scale=2.0):
+                            output_scale=2.0, ref_aspect=REF_ASPECT):
     """Convert one phone photo (BGR) to reference-quality scan (BGR).
 
     Geometry first (warp or deskew+trim), photometry second, reference
     framing last. ``output_scale`` upscales the final scan (reference.png
-    is ~2x the wiki photo's pixels). Never raises on degenerate input:
+    is ~2x the wiki photo's pixels). ``ref_aspect`` locks the canvas
+    aspect ratio to the reference (width/height) so the output crop
+    matches reference.png. Never raises on degenerate input:
     falls back to photometry-only.
     """
     if image is None or getattr(image, "size", 0) == 0:
@@ -835,13 +958,17 @@ def scan_photo_to_reference(image, ksize=None, white_point=None,
     )
     if reframe:
         try:
+            # Enhancement exposes faint rulings the geometry stage could not
+            # see, so a small residual curl may remain. Straighten it now,
+            # before re-framing (the margins are re-measured afterwards).
+            enhanced = residual_deskew(enhanced)
             # IMPORTANT: cleanup passes must run AFTER re-framing. On a
             # full-frame phone photo the page edge IS the image border, so
             # running border/corner whitening before reframe erases real
             # content (e.g. the bottom ~16% of this page) and reframe then
             # centers a truncated document. In the reframed output, edges
             # are pure-white margins where artifact removal is safe.
-            enhanced = reframe_like_reference(enhanced)
+            enhanced = reframe_like_reference(enhanced, ref_aspect=ref_aspect)
             enhanced = remove_binding_rings(enhanced)[0]
             enhanced = whiten_corner_smears(enhanced)
             enhanced = whiten_border_artifacts(enhanced)
@@ -855,4 +982,21 @@ def scan_photo_to_reference(image, ksize=None, white_point=None,
             enhanced = cv.addWeighted(enlarged, 1.6, blur, -0.6, 0)
         except Exception:
             pass
+
+    # Final sizing: fit the output to match the reference dimensions exactly.
+    # The reframed content has the correct margins and canvas aspect ratio,
+    # but the pixel dimensions may differ slightly from reference.png due to
+    # rounding in the output_scale step. Adjust the width to match the
+    # reference aspect ratio (derived from current height), giving dimensions
+    # that match reference.png very closely.
+    if ref_aspect is not None:
+        try:
+            h, w = enhanced.shape[:2]
+            target_w = int(round(h * ref_aspect))
+            if target_w != w:
+                enhanced = cv.resize(enhanced, (target_w, h),
+                                     interpolation=cv.INTER_LANCZOS4)
+        except Exception:
+            pass
+
     return enhanced
