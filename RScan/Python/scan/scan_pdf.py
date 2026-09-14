@@ -18,6 +18,8 @@ import argparse
 import os
 import sys
 import tempfile
+import time
+import logging
 
 import cv2 as cv
 import numpy as np
@@ -27,7 +29,15 @@ try:
 except ImportError:  # pragma: no cover
     pymupdf = None
 
-from auto_scan import scan_photo_to_reference
+try:
+    from auto_scan import scan_photo_to_reference
+except ModuleNotFoundError:
+    from RScan.Python.scan.auto_scan import scan_photo_to_reference
+
+LOG_LEVEL = logging.DEBUG if os.environ.get("RSCAN_DEBUG", "0") == "1" else logging.INFO
+logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s %(message)s")
+logger = logging.getLogger("rscan.scan_pdf")
+logger.setLevel(LOG_LEVEL)
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff", ".webp")
 
@@ -142,19 +152,30 @@ def save_bgr_pages_as_pdf(pages_bgr, output_pdf, jpeg_quality=90):
 # ---------------------------------------------------------------------------
 
 def scan_pdf_to_reference(input_path, output_pdf, dpi=300, images_out=None,
-                          jpeg_quality=90, no_trim=False, **scan_kwargs):
+                          jpeg_quality=90, no_trim=False, page_limit=None, **scan_kwargs):
     """Scan ``input_path`` (PDF / image / dir) to reference quality.
 
     Returns the output PDF path. When ``images_out`` is given, each scanned
-    page is also written there as ``page_0001.jpg`` etc.
+    page is also written there as ``page_0001.jpg`` etc. When ``page_limit``
+    is provided, only the first ``page_limit`` pages are scanned.
     """
+    started = time.time()
+    logger.info("scan_pdf_to_reference: start input=%s output=%s dpi=%s page_limit=%s", input_path, output_pdf, dpi, page_limit)
     pages = collect_pages(input_path, dpi=dpi)
     if not pages:
         raise ValueError(f"no pages found in: {input_path}")
+    total_pages = len(pages)
+    if page_limit is not None:
+        pages = pages[:page_limit]
+        logger.info("scan_pdf_to_reference: page_limit applied requested=%s kept=%d of %d", page_limit, len(pages), total_pages)
+    logger.info("scan_pdf_to_reference: loaded pages=%d", len(pages))
+
     scanned = []
     for i, page in enumerate(pages):
-        print(f"scanning page {i + 1}/{len(pages)} ({page.shape[1]}x{page.shape[0]}) ...")
+        page_started = time.time()
+        logger.info("scanning page %d/%d (%dx%d) ...", i + 1, len(pages), page.shape[1], page.shape[0])
         out = scan_photo_to_reference(page, trim=not no_trim, **scan_kwargs)
+        logger.info("scan_pdf_to_reference: page %d scan done elapsed=%.2fs dims=%dx%d", i + 1, time.time() - page_started, out.shape[1], out.shape[0])
         scanned.append(out)
         if images_out:
             os.makedirs(images_out, exist_ok=True)
@@ -163,7 +184,11 @@ def scan_pdf_to_reference(input_path, output_pdf, dpi=300, images_out=None,
                 out,
                 [int(cv.IMWRITE_JPEG_QUALITY), jpeg_quality],
             )
+    save_started = time.time()
+    logger.info("scan_pdf_to_reference: saving scanned pages pages=%d output=%s", len(scanned), output_pdf)
     save_bgr_pages_as_pdf(scanned, output_pdf, jpeg_quality=jpeg_quality)
+    logger.info("scan_pdf_to_reference: saved pdf elapsed=%.2fs", time.time() - save_started)
+    logger.info("scan_pdf_to_reference: done pages=%d elapsed=%.2fs output=%s", len(scanned), time.time() - started, output_pdf)
     print(f"done: {len(scanned)} page(s) -> {output_pdf}")
     return output_pdf
 

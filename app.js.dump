@@ -15,24 +15,12 @@
   const btnDownloadAll = document.getElementById("btnDownloadAll");
   const btnScanMore = document.getElementById("btnScanMore");
 
-  if (!window.__rscanTrace) {
-    window.__rscanTrace = [];
-  }
-
-  function recordTrace(step, payload) {
-    const entry = { step, payload, at: performance.now() };
-    window.__rscanTrace.push(entry);
-    console.log("scanPdfLocally:", step, payload || "");
-  }
-
   let scannedPages = []; // { id, name, width, height }
   let scannedPdfName = null;
   let isPdfMode = false;
   let localPdfUrl = null;
-  let lastSelectionSignature = "";
   const MAX_LOCAL_PDF_BYTES = 50 * 1024 * 1024;
   const MAX_LOCAL_PDF_PAGES = 50;
-  const DEFAULT_LOCAL_PAGE_LIMIT = null;
 
   if (window.pdfjsLib) {
     window.pdfjsLib.GlobalWorkerOptions.workerSrc =
@@ -54,14 +42,10 @@
   });
   uploadZone.addEventListener("click", (e) => {
     if (e.target === btnImages || e.target === btnPdf || e.target.closest(".btn")) return;
-    if (e.target === fileInput || e.target.closest("#fileInput")) return;
     fileInput.click();
   });
   fileInput.addEventListener("change", () => {
-    if (fileInput.files.length) {
-      recordTrace("change-file-input", { fileCount: fileInput.files.length, accepted: fileInput.accept });
-      handleFiles(fileInput.files);
-    }
+    if (fileInput.files.length) handleFiles(fileInput.files);
   });
 
   // ── Buttons ──────────────────────────────────────────────────────
@@ -87,7 +71,6 @@
     resultsGrid.innerHTML = "";
     scannedPages = [];
     scannedPdfName = null;
-    lastSelectionSignature = "";
   });
 
   btnDownloadAll.addEventListener("click", downloadAll);
@@ -96,23 +79,12 @@
   async function handleFiles(files) {
     if (!files || !files.length) return;
 
-    const fileArray = Array.from(files);
-    const currentSelectionSignature = fileArray
-      .map((f) => `${f.name}:${f.size}:${f.lastModified}`)
-      .sort()
-      .join("|");
-    if (currentSelectionSignature === lastSelectionSignature) {
-      recordTrace("duplicate-file-selection-suppressed", { fileCount: fileArray.length, signature: currentSelectionSignature });
-      return;
-    }
-    lastSelectionSignature = currentSelectionSignature;
-
     uploadSection.classList.add("hidden");
     processingSection.classList.remove("hidden");
     resultsSection.classList.add("hidden");
     resultsGrid.innerHTML = "";
 
-    // PDF mode: prefer the server route for a stable PDF artifact and a page cap of 10.
+    // PDF mode: keep the source entirely in the browser.
     const firstFile = files[0];
     const isPdfFile = firstFile.type === "application/pdf" || /\.pdf$/i.test(firstFile.name);
     if (isPdfFile) {
@@ -123,15 +95,10 @@
       }
       const file = firstFile;
       try {
-        await scanPdfViaServer(file, DEFAULT_LOCAL_PAGE_LIMIT);
+        await scanPdfLocally(file);
       } catch (err) {
-        console.error("scanPdfLocally: server PDF route failed; falling back to local trace path", err);
-        try {
-          await scanPdfLocally(file, DEFAULT_LOCAL_PAGE_LIMIT);
-        } catch (fallbackErr) {
-          alert("Local scan failed: " + fallbackErr.message);
-          showUpload();
-        }
+        alert("Local scan failed: " + err.message);
+        showUpload();
       }
       return;
     }
@@ -164,94 +131,35 @@
     }
   }
 
-  async function scanPdfViaServer(file, pageLimit = DEFAULT_LOCAL_PAGE_LIMIT) {
-    const body = new FormData();
-    body.append("file", file, file.name);
-    if (Number.isInteger(pageLimit) && pageLimit >= 1) {
-      body.append("page_limit", String(pageLimit));
-    }
-    processingStatus.textContent = `Uploading ${file.name} to the scan server...`;
-    recordTrace("server-upload", { file: file.name, size: file.size, pageLimit });
-
-    const response = await fetch("/api/scan-pdf", { method: "POST", body });
-    const data = await response.json().catch(() => ({}));
-    if (!response.ok || data.error) {
-      const message = data.error || `Server scan failed with HTTP ${response.status}`;
-      recordTrace("server-upload-failed", { message, status: response.status });
-      throw new Error(message);
-    }
-
-    const pdfName = data.pdf;
-    if (!pdfName) {
-      recordTrace("server-upload-no-pdf", data);
-      throw new Error("The PDF scan endpoint did not return a PDF filename.");
-    }
-
-    processingStatus.textContent = "Preparing your scanned PDF download...";
-    const pdfUrl = `/api/pdf/${encodeURIComponent(pdfName)}`;
-    recordTrace("server-upload-ok", { pdfName, pdfUrl });
-    showServerPdfResult(file.name, pdfUrl);
-  }
-
-  async function scanPdfLocally(file, pageLimit = DEFAULT_LOCAL_PAGE_LIMIT) {
-    recordTrace("start", { file: file.name, size: file.size, requestedPageLimit: pageLimit });
+  async function scanPdfLocally(file) {
+    console.log("scanPdfLocally: start", file.name, file.size);
     if (!window.pdfjsLib || !window.PDFLib) {
       console.error("scanPdfLocally: missing pdfjsLib or PDFLib", {
         hasPdfjsLib: Boolean(window.pdfjsLib),
         hasPDFLib: Boolean(window.PDFLib),
       });
-      recordTrace("missing-libs", { hasPdfjsLib: Boolean(window.pdfjsLib), hasPDFLib: Boolean(window.PDFLib) });
       throw new Error("Local PDF engine is still loading. Please try again.");
     }
     if (file.size > MAX_LOCAL_PDF_BYTES) {
       console.error("scanPdfLocally: file exceeds limit", file.size, MAX_LOCAL_PDF_BYTES);
-      recordTrace("limit-exceeded", { fileSize: file.size, max: MAX_LOCAL_PDF_BYTES });
       throw new Error("This PDF is larger than the 50 MB local-processing limit.");
     }
-
     const bytes = new Uint8Array(await file.arrayBuffer());
     console.log("scanPdfLocally: bytes loaded", bytes.length);
-    recordTrace("bytes-loaded", { bytes: bytes.length, file: file.name });
-
-    const pdfjsLog = {
-      fileName: file.name,
-      fileSize: file.size,
-      bytes: bytes.length,
-      hasPdfjsLib: Boolean(window.pdfjsLib),
-      hasPDFLib: Boolean(window.PDFLib),
-      requestedPageLimit: pageLimit,
-    };
-    console.log("scanPdfLocally: pdfjs start parse", pdfjsLog);
-    recordTrace("pdfjs-start", pdfjsLog);
-
-    let source;
-    try {
-      source = await window.pdfjsLib.getDocument({ data: bytes }).promise;
-      console.log("scanPdfLocally: pdfjs loaded pages=", source.numPages);
-      recordTrace("pdfjs-pages", { numPages: source.numPages });
-    } catch (err) {
-      console.error("scanPdfLocally: pdfjs parse failed", err);
-      recordTrace("pdfjs-failed", { message: err && err.message, stack: err && err.stack });
-      throw err;
-    }
-
+    const source = await window.pdfjsLib.getDocument({ data: bytes }).promise;
+    console.log("scanPdfLocally: pdfjs loaded pages=", source.numPages);
     if (source.numPages > MAX_LOCAL_PDF_PAGES) {
       console.error("scanPdfLocally: too many pages", source.numPages, MAX_LOCAL_PDF_PAGES);
-      recordTrace("page-limit", { numPages: source.numPages, max: MAX_LOCAL_PDF_PAGES });
       throw new Error(`This PDF has ${source.numPages} pages. Local scanning supports up to ${MAX_LOCAL_PDF_PAGES} pages.`);
     }
-
-    const pagesToScan = Math.min(source.numPages, pageLimit);
-    recordTrace("pdfjs-ok", { numPages: source.numPages, pagesToScan });
-
     const output = await window.PDFLib.PDFDocument.create();
     const worker = new Worker("/static/js/scan-worker.js");
     const pageImages = [];
 
     try {
-      for (let pageNumber = 1; pageNumber <= pagesToScan; pageNumber += 1) {
-        processingStatus.textContent = `Cleaning page ${pageNumber} of ${pagesToScan} on this device...`;
-        console.log("scanPdfLocally: cleaning page", pageNumber, "of", pagesToScan);
+      for (let pageNumber = 1; pageNumber <= source.numPages; pageNumber += 1) {
+        processingStatus.textContent = `Cleaning page ${pageNumber} of ${source.numPages} on this device...`;
+        console.log("scanPdfLocally: cleaning page", pageNumber, "of", source.numPages);
         const page = await source.getPage(pageNumber);
         const pageSize = page.getViewport({ scale: 1 });
         const scale = Math.min(2.0, 1500 / pageSize.width);
@@ -288,7 +196,6 @@
       }
     } catch (err) {
       console.error("scanPdfLocally: error in page loop", err);
-      recordTrace("page-loop-failed", { message: err && err.message, stack: err && err.stack });
       throw err;
     } finally {
       worker.terminate();
@@ -367,26 +274,6 @@
         </div>`;
       resultsGrid.appendChild(card);
     });
-  }
-
-  function showServerPdfResult(originalName, pdfUrl) {
-    processingSection.classList.add("hidden");
-    resultsSection.classList.remove("hidden");
-
-    const card = document.createElement("div");
-    card.className = "result-card";
-    card.innerHTML = `
-      <div class="result-card-body">
-        <div class="result-card-name">${esc(originalName)}</div>
-        <div class="result-card-meta">Server PDF scan ready</div>
-        <div class="result-card-actions">
-          <a class="btn btn-primary btn-sm" href="${pdfUrl}" download="${safeFilename(originalName, "scanned_document")}">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-            Download PDF
-          </a>
-        </div>
-      </div>`;
-    resultsGrid.appendChild(card);
   }
 
   function showLocalPdfResult(originalName, pageImages, pdfUrl) {

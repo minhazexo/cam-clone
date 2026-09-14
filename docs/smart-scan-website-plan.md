@@ -40,6 +40,89 @@ Browser -> Vercel request -> render every PDF page -> scan every page -> return 
 
 That flow can hit serverless timeout, memory, temporary-storage, request-size, and concurrent-processing limits.
 
+## 3.1 Local-First Alternative
+
+Yes, the product can be designed so the user's files never leave the user's device.
+
+The browser can handle the complete workflow locally:
+
+```text
+User selects PDF
+  -> browser reads PDF locally
+  -> PDF.js renders each page
+  -> WebAssembly/OpenCV processes each page
+  -> pdf-lib or a PDF writer builds the result locally
+  -> browser downloads the finished PDF
+```
+
+In this model:
+
+- Vercel serves the frontend and scanner runtime assets
+- No source PDF is uploaded to a server
+- No background worker is required for the core scan flow
+- The result is created in browser memory and downloaded locally
+- The product can work offline after the first visit if built as a PWA
+
+### What must change
+
+The existing Python implementation cannot execute directly inside a normal browser. The scanner core must be ported or compiled:
+
+1. Use PDF.js to render PDF pages in the browser.
+2. Use OpenCV.js or a custom C++/Rust WebAssembly module for image operations.
+3. Port the current geometry and enhancement stages from NumPy/OpenCV to the browser runtime.
+4. Use pdf-lib or a WASM PDF writer to assemble scanned pages.
+5. Run heavy work in Web Workers so the UI stays responsive.
+6. Store no document data in analytics, logs, or server requests.
+
+### Local-first tradeoffs
+
+Advantages:
+
+- Strong privacy story
+- No server storage or signed-download infrastructure for the basic flow
+- Lower hosting cost
+- Works well with Vercel static hosting
+- Can support offline/PWA usage
+
+Tradeoffs:
+
+- First load is larger because PDF, image, and WASM runtimes must download
+- Old phones and low-memory devices may struggle with large PDFs
+- Browser memory limits require page-by-page processing
+- The current Python output will not match pixel-for-pixel until the algorithms are ported carefully
+- Browser support and mobile performance need dedicated testing
+
+### Recommended hybrid design
+
+Make local processing the default and keep an optional server fallback:
+
+```text
+Small/normal PDF -> process locally in browser
+Large PDF or weak device -> user chooses secure cloud processing
+```
+
+The UI should clearly show the selected mode:
+
+- `On-device scan` means the file stays on the device.
+- `Cloud scan` means the file is uploaded temporarily for processing.
+
+Do not silently upload a file after promising local processing.
+
+### Recommended migration path
+
+Do not rewrite the scanner in one large step. Use this order:
+
+1. Build the browser PDF preview with PDF.js.
+2. Port grayscale, white-point, black-point, and sharpening operations.
+3. Port perspective warp and document geometry.
+4. Port background flattening and artifact cleanup.
+5. Rebuild PDF output with pdf-lib.
+6. Compare browser output against the existing Python reference fixture.
+7. Add a Web Worker and memory-safe page queue.
+8. Add optional cloud fallback only after local mode is stable.
+
+The existing Python pipeline should remain as the golden-reference implementation during the port. Every browser change should be measured against the same source photo and `reference.png`.
+
 Recommended production flow:
 
 ```text
@@ -561,3 +644,31 @@ The website is ready for public beta when:
 7. Run visual and scanner regression tests using the existing reference fixture.
 
 This order keeps the verified image-processing behavior stable while the product and deployment layers evolve around it.
+
+## 15. Implemented In This Repository
+
+The first local-first implementation slice is now present:
+
+- PDF.js renders PDF pages in the browser.
+- `static/js/scan-worker.js` performs local image enhancement in a Web Worker.
+- pdf-lib assembles the processed pages into a downloadable PDF locally.
+- The browser enforces local file-size and page-count limits.
+- PDF page dimensions are preserved when building the result PDF.
+- Worker failures produce a visible error instead of an endless spinner.
+- `api/index.py` and `vercel.json` provide a Vercel entrypoint for the Flask shell.
+- The legacy server image endpoint rejects PDFs and the PDF download route validates generated filenames.
+
+The remaining production work is self-hosting pinned PDF.js/pdf-lib assets, porting the full Python geometry pipeline to WebAssembly/OpenCV.js for closer pixel parity, and adding a browser visual-regression suite.
+
+## 16. Bun Commands
+
+The frontend runtime is now managed with Bun:
+
+```text
+bun install       # install pinned browser dependencies
+bun run build     # bundle PDF.js, pdf-lib, and the PDF worker locally
+bun run check     # verify generated browser assets
+bun run dev       # build assets and start the Flask development server
+```
+
+The generated files in `static/vendor/` are deployment assets and should be included in the repository. `node_modules/` remains local-only and is ignored.
