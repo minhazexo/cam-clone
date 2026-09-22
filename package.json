@@ -1,7 +1,7 @@
 {
   "name": "rscan-smart-scanner",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Local-first smart document scanner frontend",
   "scripts": {
     "dev": "bun run build && python app.py",
