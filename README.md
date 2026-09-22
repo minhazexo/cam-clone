@@ -9,7 +9,7 @@ A CamScanner-style document scanner for the web. Upload phone photos or PDFs and
 - **Clean note pages:** every output page is uniform A4 (portrait or landscape matched), full-bleed, with a thin black frame — no giant pixel-sized pages, no white borders.
 - **Live PDF progress:** server PDF jobs stream per-page progress over SSE; the browser path shows the same step log + progress bar locally.
 - **Page-limit picker:** 10 / 20 / 30 / 40 / 50 / All Pages modal on both scan pages (local cap: 250 MB, 250 pages).
-- **Deploy-ready:** one-click Vercel deploy (`vercel.json` tuned: 60 s / 1024 MB function), plus a `/api/health` probe.
+- **Deploy-ready:** one-click Vercel deploy (Hobby gives 300 s / 2 GB functions by default — no tuning needed), plus a `/api/health` probe.
 
 ## Quickstart (local)
 
