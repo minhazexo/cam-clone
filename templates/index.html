@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RScan — Smart Document Scanner</title>
+    <meta name="description" content="RScan — a CamScanner-style smart document scanner. Upload a PDF or images to get clean, high-quality scanned output instantly.">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -30,10 +31,10 @@
             <div class="upload-icon">
                 <svg viewBox="0 0 64 64" fill="none"><rect x="8" y="12" width="48" height="40" rx="4" stroke="currentColor" stroke-width="2.5"/><path d="M8 40l14-14 10 10 8-8 16 16" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><circle cx="22" cy="26" r="4" stroke="currentColor" stroke-width="2"/></svg>
             </div>
-            <h2 class="upload-title">Make every page scan-ready</h2>
-            <p class="upload-subtitle">Drop a PDF here to scan it privately on this device</p>
+            <h1 class="upload-title">Make every page scan-ready</h1>
+            <p class="upload-subtitle">Drop a PDF here to scan it — page by page, with live progress</p>
             <p class="upload-formats">Supports: JPG, PNG, BMP, TIFF, WebP, PDF</p>
-            <p class="local-note"><span aria-hidden="true">&#9679;</span> PDF files stay in your browser</p>
+            <p class="local-note"><span aria-hidden="true">&#9679;</span> PDF is processed on the server — no cloud storage</p>
             <input type="file" id="fileInput" multiple accept=".jpg,.jpeg,.png,.bmp,.tif,.tiff,.webp,.pdf" hidden>
             <div class="upload-buttons">
                 <button class="btn btn-primary" id="btnImages">
@@ -48,11 +49,43 @@
         </div>
     </section>
 
-    <!-- Processing -->
+    <!-- ── Live Processing Section ── -->
     <section class="processing-section hidden" id="processingSection">
-        <div class="spinner"></div>
-        <h2>Scanning your document...</h2>
-        <p class="processing-status" id="processingStatus">Processing 0 / 0 pages</p>
+
+        <!-- Scanner animation -->
+        <div class="scanner-wrap">
+            <div class="scanner-doc">
+                <svg viewBox="0 0 80 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="6" y="2" width="68" height="96" rx="6" fill="#f0f4ff" stroke="#c7d2fe" stroke-width="2"/>
+                    <rect x="16" y="16" width="48" height="6" rx="3" fill="#c7d2fe" opacity=".7"/>
+                    <rect x="16" y="28" width="48" height="6" rx="3" fill="#c7d2fe" opacity=".7"/>
+                    <rect x="16" y="40" width="36" height="6" rx="3" fill="#c7d2fe" opacity=".5"/>
+                    <rect x="16" y="58" width="48" height="6" rx="3" fill="#c7d2fe" opacity=".7"/>
+                    <rect x="16" y="70" width="32" height="6" rx="3" fill="#c7d2fe" opacity=".4"/>
+                </svg>
+                <div class="scan-line" id="scanLine"></div>
+            </div>
+        </div>
+
+        <h2 class="proc-title" id="procTitle">Scanning your document…</h2>
+
+        <!-- Page counter -->
+        <div class="page-counter hidden" id="pageCounter">
+            <span class="page-current" id="pageCurrent">0</span>
+            <span class="page-sep">/</span>
+            <span class="page-total" id="pageTotal">0</span>
+            <span class="page-label">pages</span>
+        </div>
+
+        <!-- Progress bar -->
+        <div class="progress-bar-wrap hidden" id="progressBarWrap">
+            <div class="progress-bar" id="progressBar"></div>
+            <span class="progress-pct" id="progressPct">0%</span>
+        </div>
+
+        <!-- Step log -->
+        <ul class="step-log" id="stepLog" aria-live="polite"></ul>
+
     </section>
 
     <!-- Results -->
@@ -79,6 +112,34 @@
 <footer class="footer">
     <p>RScan Document Scanner &mdash; Python + OpenCV + Flask</p>
 </footer>
+
+<!-- ── Page-Limit Modal ── -->
+<div class="modal-backdrop hidden" id="pageLimitBackdrop" role="dialog" aria-modal="true" aria-labelledby="pageLimitTitle">
+    <div class="modal">
+        <div class="modal-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="9" y1="13" x2="15" y2="13"/>
+                <line x1="9" y1="17" x2="15" y2="17"/>
+            </svg>
+            <h2 class="modal-title" id="pageLimitTitle">How many pages to scan?</h2>
+        </div>
+        <p class="modal-subtitle">Choose how many pages from your PDF you want to process.</p>
+        <div class="modal-options" id="pageLimitOptions">
+            <button class="page-opt-btn" data-limit="10">10 pages</button>
+            <button class="page-opt-btn" data-limit="20">20 pages</button>
+            <button class="page-opt-btn" data-limit="30">30 pages</button>
+            <button class="page-opt-btn" data-limit="40">40 pages</button>
+            <button class="page-opt-btn" data-limit="50">50 pages</button>
+            <button class="page-opt-btn page-opt-all" data-limit="all">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2z"/><path d="M8 12h8M12 8v8"/></svg>
+                All Pages
+            </button>
+        </div>
+        <button class="btn btn-outline modal-cancel" id="pageLimitCancel">Cancel</button>
+    </div>
+</div>
 
 <script src="{{ url_for('static', filename='vendor/runtime.js') }}" type="module"></script>
 <script src="{{ url_for('static', filename='js/app.js') }}" type="module"></script>
