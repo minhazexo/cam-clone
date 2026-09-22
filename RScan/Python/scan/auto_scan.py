@@ -321,32 +321,84 @@ def rectify_from_rulings(image, max_tilt_deg=12.0):
     )
 
 
+def estimate_color_ruling_tilt(image, max_angle=10.0):
+    """Tilt of colored ruling lines (red/pink notebook margins) in degrees.
+
+    Handwriting ink is near-gray (R≈G≈B) so the R−G channel erases text and
+    isolates colored rulings that are invisible to luminance detectors.
+    Length-weighted median of long near-horizontal segments; 0.0 when
+    nothing reliable is found. Same OpenCV rotation sign as
+    ``estimate_skew_angle`` (positive = counter-clockwise correction).
+    """
+    try:
+        b, g, r = cv.split(image.astype(np.int16)) if image.ndim == 3 else (None,) * 3
+        if b is None:
+            return 0.0
+        pink = np.clip(r - g, 0, 255).astype(np.uint8)
+        h, w = pink.shape[:2]
+        scale = 1000.0 / w if w > 1000 else 1.0
+        if scale < 1.0:
+            pink = cv.resize(pink, None, fx=scale, fy=scale,
+                             interpolation=cv.INTER_AREA)
+        _, bw = cv.threshold(pink, 25, 255, cv.THRESH_BINARY)
+        bw = cv.morphologyEx(bw, cv.MORPH_CLOSE, np.ones((3, 15), np.uint8))
+        ph, pw = bw.shape[:2]
+        lines = cv.HoughLinesP(bw, 1, np.pi / 180, threshold=120,
+                               minLineLength=int(min(ph, pw) * 0.3),
+                               maxLineGap=30)
+        if lines is None or len(lines) < 3:
+            return 0.0
+        angles, weights = [], []
+        for l in lines:
+            x1, y1, x2, y2 = (int(v) for v in l)
+            a = math.degrees(math.atan2(y2 - y1, x2 - x1))
+            if abs(a) > 12.0 and abs(abs(a) - 180.0) > 12.0:
+                continue  # not near-horizontal; diagonals lie
+            length = math.hypot(x2 - x1, y2 - y1)
+            angles.append(a)
+            weights.append(length)
+        if len(angles) < 3:
+            return 0.0
+        order = np.argsort(angles)
+        angles = np.asarray(angles, dtype=float)[order]
+        weights = np.asarray(weights, dtype=float)[order]
+        cumulative = np.cumsum(weights)
+        median = float(angles[np.searchsorted(cumulative, cumulative[-1] / 2.0)])
+        if abs(median) > max_angle:
+            return 0.0
+        if abs(median) < 0.3:
+            return 0.0  # already straight; avoid needless resampling
+        return median
+    except Exception:
+        return 0.0
+
+
 def estimate_skew_angle(image, max_angle=15.0):
     """Estimate dominant text-line tilt in degrees (OpenCV rotation sign).
 
-    Positive means counter-clockwise correction. Returns 0.0 when no
-    reliable lines are found or the angle is implausibly large.
+    Positive means counter-clockwise correction. Falls back to colored
+    ruling lines (pink/red notebook margins) when luminance finds nothing —
+    those are invisible in grayscale but often carry the page tilt.
+    Returns 0.0 when no reliable lines are found or the angle is
+    implausibly large.
     """
     probe, _ = _probe_gray(image)
     segments = _ruling_segments(probe, max_tilt_deg=max_angle)
-    if len(segments) < 5:
-        return 0.0
-    angles, weights = [], []
-    for x1, y1, x2, y2 in segments:
-        dx, dy = x2 - x1, y2 - y1
-        angles.append(math.degrees(math.atan2(dy, dx)))
-        weights.append(math.hypot(dx, dy))
-    # Length-weighted median: long ruling lines outvote short fragments.
-    order = np.argsort(angles)
-    angles = np.asarray(angles, dtype=float)[order]
-    weights = np.asarray(weights, dtype=float)[order]
-    cumulative = np.cumsum(weights)
-    median = float(angles[np.searchsorted(cumulative, cumulative[-1] / 2.0)])
-    if abs(median) > max_angle:
-        return 0.0
-    if abs(median) < 0.3:
-        return 0.0  # already straight; avoid needless resampling
-    return median
+    if len(segments) >= 5:
+        angles, weights = [], []
+        for x1, y1, x2, y2 in segments:
+            dx, dy = x2 - x1, y2 - y1
+            angles.append(math.degrees(math.atan2(dy, dx)))
+            weights.append(math.hypot(dx, dy))
+        # Length-weighted median: long ruling lines outvote short fragments.
+        order = np.argsort(angles)
+        angles = np.asarray(angles, dtype=float)[order]
+        weights = np.asarray(weights, dtype=float)[order]
+        cumulative = np.cumsum(weights)
+        median = float(angles[np.searchsorted(cumulative, cumulative[-1] / 2.0)])
+        if abs(median) <= max_angle and abs(median) >= 0.3:
+            return median
+    return estimate_color_ruling_tilt(image, max_angle=min(max_angle, 10.0))
 
 
 def deskew(image, angle=None):
@@ -1075,6 +1127,15 @@ def scan_photo_to_reference(image, ksize=None, white_point=None,
                                  fy=output_scale, interpolation=cv.INTER_LANCZOS4)
             blur = cv.GaussianBlur(enlarged, (0, 0), sigmaX=1.0)
             enhanced = cv.addWeighted(enlarged, 1.6, blur, -0.6, 0)
+        except Exception:
+            pass
+    elif not template_aligned:
+        # Scale-1.0 path otherwise has no sharpening (the template-aligned
+        # branch sharpens separately above). A light unsharp pass crisps text
+        # edges with negligible file-size cost.
+        try:
+            blur = cv.GaussianBlur(enhanced, (0, 0), sigmaX=0.8)
+            enhanced = cv.addWeighted(enhanced, 1.3, blur, -0.3, 0)
         except Exception:
             pass
 

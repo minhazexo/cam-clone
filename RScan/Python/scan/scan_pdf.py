@@ -63,8 +63,12 @@ def _pixmap_to_bgr(pix):
     return cv.cvtColor(rgb, cv.COLOR_RGB2BGR)
 
 
-def iter_pdf_pages_as_bgr(pdf_path, dpi=300):
-    """Yield (page_number, bgr_image) rendering each PDF page at ``dpi``."""
+def iter_pdf_pages_as_bgr(pdf_path, dpi=200):
+    """Yield (page_number, bgr_image) rendering each PDF page at ``dpi``.
+
+    200 DPI preserves note-page text crisply while keeping each page's
+    pixel count (and hence JPEG bytes) far below the old 300 DPI default.
+    """
     if pymupdf is None:
         raise ImportError("pymupdf is required for PDF input/output (pip install pymupdf)")
     doc = pymupdf.open(pdf_path)
@@ -101,7 +105,7 @@ def iter_images_as_bgr(path):
         yield 0, img
 
 
-def collect_pages(source, dpi=300):
+def collect_pages(source, dpi=200):
     """Return list of BGR pages from a PDF, image, or image directory."""
     if os.path.isdir(source):
         return [img for _, img in iter_images_as_bgr(source)]
@@ -117,8 +121,38 @@ def collect_pages(source, dpi=300):
 # scanned-PDF writer (PyMuPDF only, no extra deps)
 # ---------------------------------------------------------------------------
 
-def save_bgr_pages_as_pdf(pages_bgr, output_pdf, jpeg_quality=90):
-    """Write BGR pages to a PDF, one page per image, original pixel sizes."""
+PAGE_SIZES = {
+    "A4": (595.0, 842.0),
+    "Letter": (612.0, 792.0),
+}
+
+
+def draw_page_border(bgr, thickness=None, inset=None):
+    """Draw a thin square black frame just inside the image edges.
+
+    Gives every note page a crisp, uniform A4 frame. Thickness scales with
+    resolution (~0.3% of the short side, min 3px); inset defaults to one
+    stroke width so the full frame stays visible.
+    """
+    h, w = bgr.shape[:2]
+    th = thickness or max(3, round(min(h, w) * 0.003))
+    ins = inset if inset is not None else th
+    return cv.rectangle(bgr, (ins, ins), (w - 1 - ins, h - 1 - ins),
+                        (0, 0, 0), th, cv.LINE_8)
+
+
+def save_bgr_pages_as_pdf(pages_bgr, output_pdf, jpeg_quality=78,
+                          page_size="A4", margin=0.0,
+                          page_border=True):
+    """Write BGR pages to a PDF, one page per image, on uniform note pages.
+
+    ``page_size`` is "A4"/"Letter" (matched to each image's orientation, so
+    landscape photos get landscape pages with no white bands), an explicit
+    ``(w, h)`` point tuple, or None for the legacy behaviour (one PDF point
+    per image pixel, variable page dimensions). The scanned image is
+    aspect-fit to fill the page (``margin=0`` default: no white frame).
+    Increase ``margin`` only if a white frame is wanted.
+    """
     if pymupdf is None:
         raise ImportError("pymupdf is required for PDF output (pip install pymupdf)")
     if not pages_bgr:
@@ -128,6 +162,8 @@ def save_bgr_pages_as_pdf(pages_bgr, output_pdf, jpeg_quality=90):
     try:
         with tempfile.TemporaryDirectory() as tmp:
             for i, page in enumerate(pages_bgr):
+                if page_border:
+                    page = draw_page_border(page.copy())
                 ok, buf = cv.imencode(
                     ".jpg", page, [int(cv.IMWRITE_JPEG_QUALITY), jpeg_quality]
                 )
@@ -137,9 +173,28 @@ def save_bgr_pages_as_pdf(pages_bgr, output_pdf, jpeg_quality=90):
                 with open(tmp_path, "wb") as fh:
                     fh.write(buf.tobytes())
                 h, w = page.shape[:2]
-                pdf_page = doc.new_page(width=w, height=h)
+                if page_size is None:
+                    # Legacy: 1 image pixel == 1 PDF point (variable page size).
+                    pdf_page = doc.new_page(width=w, height=h)
+                    pdf_page.insert_image(
+                        pymupdf.Rect(0, 0, w, h), filename=tmp_path
+                    )
+                    continue
+                if isinstance(page_size, str):
+                    base = PAGE_SIZES.get(page_size, PAGE_SIZES["A4"])
+                    # Match page orientation to the image: landscape photos
+                    # get landscape pages, so aspect-fit never leaves white
+                    # bands on two sides.
+                    pw, ph = base if h >= w else (base[1], base[0])
+                else:
+                    pw, ph = page_size
+                max_w, max_h = pw - 2 * margin, ph - 2 * margin
+                s = min(max_w / w, max_h / h)
+                dw, dh = w * s, h * s
+                x0, y0 = (pw - dw) / 2, (ph - dh) / 2
+                pdf_page = doc.new_page(width=pw, height=ph)
                 pdf_page.insert_image(
-                    pymupdf.Rect(0, 0, w, h), filename=tmp_path
+                    pymupdf.Rect(x0, y0, x0 + dw, y0 + dh), filename=tmp_path
                 )
         doc.save(output_pdf, garbage=4, deflate=True)
     finally:
@@ -151,14 +206,23 @@ def save_bgr_pages_as_pdf(pages_bgr, output_pdf, jpeg_quality=90):
 # public API
 # ---------------------------------------------------------------------------
 
-def scan_pdf_to_reference(input_path, output_pdf, dpi=300, images_out=None,
-                          jpeg_quality=90, no_trim=False, page_limit=None, **scan_kwargs):
+def scan_pdf_to_reference(input_path, output_pdf, dpi=200, images_out=None,
+                          jpeg_quality=78, no_trim=False, page_limit=None,
+                          output_scale=1.0, page_size="A4", margin=0.0,
+                          page_border=True, **scan_kwargs):
     """Scan ``input_path`` (PDF / image / dir) to reference quality.
 
     Returns the output PDF path. When ``images_out`` is given, each scanned
     page is also written there as ``page_0001.jpg`` etc. When ``page_limit``
     is provided, only the first ``page_limit`` pages are scanned.
+
+    Defaults (Tier-1 balanced): 200 DPI render, no fake upscale
+    (``output_scale=1.0`` — the old 2.0 Lanczos upscale blurs text while
+    quadrupling pixels), JPEG q78, uniform A4 pages with 36pt margins.
+    ``page_size`` accepts "A4", "Letter", an explicit ``(w, h)`` point tuple,
+    or None for the legacy variable-size behaviour.
     """
+    scan_kwargs.setdefault("output_scale", output_scale)
     started = time.time()
     logger.info("scan_pdf_to_reference: start input=%s output=%s dpi=%s page_limit=%s", input_path, output_pdf, dpi, page_limit)
     pages = collect_pages(input_path, dpi=dpi)
@@ -186,7 +250,9 @@ def scan_pdf_to_reference(input_path, output_pdf, dpi=300, images_out=None,
             )
     save_started = time.time()
     logger.info("scan_pdf_to_reference: saving scanned pages pages=%d output=%s", len(scanned), output_pdf)
-    save_bgr_pages_as_pdf(scanned, output_pdf, jpeg_quality=jpeg_quality)
+    save_bgr_pages_as_pdf(scanned, output_pdf, jpeg_quality=jpeg_quality,
+                          page_size=page_size, margin=margin,
+                          page_border=page_border)
     logger.info("scan_pdf_to_reference: saved pdf elapsed=%.2fs", time.time() - save_started)
     logger.info("scan_pdf_to_reference: done pages=%d elapsed=%.2fs output=%s", len(scanned), time.time() - started, output_pdf)
     print(f"done: {len(scanned)} page(s) -> {output_pdf}")
@@ -199,17 +265,25 @@ def main(argv=None):
     )
     parser.add_argument("input", help="input .pdf, image, or image directory")
     parser.add_argument("output", help="output scanned .pdf path")
-    parser.add_argument("--dpi", type=int, default=300,
-                        help="render DPI for PDF input (default 300)")
+    parser.add_argument("--dpi", type=int, default=200,
+                        help="render DPI for PDF input (default 200)")
     parser.add_argument("--images-out", default=None,
                         help="optional dir to also write scanned page images")
-    parser.add_argument("--jpeg-quality", type=int, default=90)
+    parser.add_argument("--jpeg-quality", type=int, default=78,
+                        help="JPEG quality for pages (default 78)")
+    parser.add_argument("--page-size", default="A4",
+                        help='"A4", "Letter", or "keep" for legacy variable size')
+    parser.add_argument("--margin", type=float, default=0.0,
+                        help="margin in PDF points around the image (default 0 = full-bleed)")
+    parser.add_argument("--no-border", action="store_true",
+                        help="skip the black A4 frame drawn around each page")
     parser.add_argument("--no-trim", action="store_true",
                         help="disable edge-trim fallback for full-frame photos")
     parser.add_argument("--no-reframe", action="store_true",
                         help="disable reference-margin re-framing")
-    parser.add_argument("--output-scale", type=float, default=2.0,
-                        help="upscale factor for scanned pages (default 2.0)")
+    parser.add_argument("--output-scale", type=float, default=1.0,
+                        help="upscale factor for scanned pages (default 1.0; "
+                             "2.0 blurs text while quadrupling pixels)")
     parser.add_argument("--white-point", type=float, default=None)
     parser.add_argument("--black-point", type=float, default=None)
     args = parser.parse_args(argv)
@@ -219,10 +293,13 @@ def main(argv=None):
         kwargs["white_point"] = args.white_point
     if args.black_point is not None:
         kwargs["black_point"] = args.black_point
+    page_size = None if args.page_size == "keep" else args.page_size
     scan_pdf_to_reference(
         args.input, args.output, dpi=args.dpi, images_out=args.images_out,
         jpeg_quality=args.jpeg_quality, no_trim=args.no_trim,
         reframe=not args.no_reframe, output_scale=args.output_scale,
+        page_size=page_size, margin=args.margin,
+        page_border=not args.no_border,
         **kwargs,
     )
 

@@ -1,7 +1,44 @@
+# Python
 __pycache__/
 *.pyc
 .env
+.env.prod
 rscan_uploads/
+
+# IDE / editor
 .idea/
 .vscode/
+*.swp
+*.swo
+
+# Node / Bun
 node_modules/
+dist/
+build/
+*.log
+
+# Build artifacts
+graphify-out/
+Work Images/
+RScan/Java/
+RScan/Node/
+RScan/Python/crop/
+RScan/wiki_images/
+static/vendor/*.map
+
+# Test / debug / generated files
+app.js.dump
+index_check.html
+scan_pdf_test_response.json
+test_scan.py
+test_scan_crop.py
+compare_scan.py
+quality_gate.py
+scan.py
+_digest.txt
+_graph_inspect.txt
+_graphify_explain.txt
+scanned_*.pdf
+
+# Local test PDFs (never commit)
+pdf files/
