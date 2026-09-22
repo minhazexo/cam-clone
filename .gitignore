@@ -42,3 +42,6 @@ scanned_*.pdf
 
 # Local test PDFs (never commit)
 pdf files/
+
+# Local deep-dive docs (never commit)
+docs/

@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>RScan — Scan PDF Locally (Full Quality)</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='2' width='24' height='28' rx='3' fill='none' stroke='%234f46e5' stroke-width='2.5'/%3E%3Ccircle cx='12' cy='25' r='2' fill='%234f46e5'/%3E%3C/svg%3E">
     <meta name="description" content="RScan local full-quality PDF scanner. The scan engine downloads once, then everything runs on your device — no size limits.">
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -66,9 +67,37 @@
     <p>RScan Document Scanner &mdash; on-device OpenCV pipeline, no cloud</p>
 </footer>
 
-<script src="/static/js/opencv-loader.js"></script>
+<!-- ── Page-Limit Modal (same as index page) ── -->
+<div class="modal-backdrop hidden" id="pageLimitBackdrop" role="dialog" aria-modal="true" aria-labelledby="pageLimitTitle">
+    <div class="modal">
+        <div class="modal-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="9" y1="13" x2="15" y2="13"/>
+                <line x1="9" y1="17" x2="15" y2="17"/>
+            </svg>
+            <h2 class="modal-title" id="pageLimitTitle">How many pages to scan?</h2>
+        </div>
+        <p class="modal-subtitle">Choose how many pages from your PDF you want to process.</p>
+        <div class="modal-options" id="pageLimitOptions">
+            <button class="page-opt-btn" data-limit="10">10 pages</button>
+            <button class="page-opt-btn" data-limit="20">20 pages</button>
+            <button class="page-opt-btn" data-limit="30">30 pages</button>
+            <button class="page-opt-btn" data-limit="40">40 pages</button>
+            <button class="page-opt-btn" data-limit="50">50 pages</button>
+            <button class="page-opt-btn page-opt-all" data-limit="all">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2z"/><path d="M8 12h8M12 8v8"/></svg>
+                All Pages
+            </button>
+        </div>
+        <button class="btn btn-outline modal-cancel" id="pageLimitCancel">Cancel</button>
+    </div>
+</div>
+
+<script src="/static/js/opencv-loader.js?v=2"></script>
 <script src="{{ url_for('static', filename='vendor/runtime.js') }}" type="module"></script>
 <!-- Scan worker chain: /static/js/scan-worker-v2.js with fallback to /static/js/scan-worker.js (resolved in scanpdf.js) -->
-<script src="/static/js/scanpdf.js"></script>
+<script src="/static/js/scanpdf.js?v=2"></script>
 </body>
 </html>

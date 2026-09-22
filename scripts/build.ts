@@ -4,11 +4,6 @@ const builds = [
     naming: "runtime.js",
     format: "esm",
   },
-  {
-    entrypoints: ["node_modules/pdfjs-dist/build/pdf.worker.js"],
-    naming: "pdf.worker.js",
-    format: "iife",
-  },
 ];
 
 for (const config of builds) {
@@ -25,5 +20,13 @@ for (const config of builds) {
     process.exit(1);
   }
 }
+
+// pdf.worker.js is COPIED verbatim, never bundled: it must match the legacy
+// API build byte-for-byte in protocol, and rebundling breaks its worker
+// bootstrap (getDocument() then hangs forever with no error).
+await Bun.write(
+  "static/vendor/pdf.worker.js",
+  Bun.file("node_modules/pdfjs-dist/legacy/build/pdf.worker.js")
+);
 
 console.log("Bun build complete: static/vendor/runtime.js and pdf.worker.js");

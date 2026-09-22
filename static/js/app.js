@@ -39,8 +39,8 @@ document.addEventListener("DOMContentLoaded", function () {
   let activeEventSource     = null;
   let _activeStepLi         = null;
 
-  const MAX_LOCAL_PDF_BYTES = 50 * 1024 * 1024;
-  const MAX_LOCAL_PDF_PAGES = 50;
+  const MAX_LOCAL_PDF_BYTES = 250 * 1024 * 1024;
+  const MAX_LOCAL_PDF_PAGES = 250;
   const DEFAULT_PAGE_LIMIT  = null;
 
   if (window.pdfjsLib) {
@@ -296,7 +296,7 @@ document.addEventListener("DOMContentLoaded", function () {
       throw new Error("Local PDF engine is still loading. Please try again.");
     }
     if (file.size > MAX_LOCAL_PDF_BYTES) {
-      throw new Error("This PDF is larger than the 50 MB local-processing limit.");
+      throw new Error("This PDF is larger than the 250 MB local-processing limit.");
     }
 
     resetProcessingUI();

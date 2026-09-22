@@ -13,8 +13,8 @@
   "use strict";
 
   /* ── Guards — same names/values as static/js/app.js ── */
-  var MAX_LOCAL_PDF_BYTES = 50 * 1024 * 1024;
-  var MAX_LOCAL_PDF_PAGES = 50;
+  var MAX_LOCAL_PDF_BYTES = 250 * 1024 * 1024;
+  var MAX_LOCAL_PDF_PAGES = 250;
 
   var PDF_WORKER_SRC = "/static/vendor/pdf.worker.js";
   var JPEG_QUALITY = 0.80;
@@ -115,12 +115,58 @@
 
   function handleFile(file) {
     if (!file || _scanning) return;
-    runScan(file).catch(function (err) {
-      addStep("active", "Scan failed");
-      markStepDone("Error: " + (err && err.message ? err.message : String(err)));
-      updateProcTitle("Scan failed \u2014 try again");
-      setBusy(false);
-      _scanning = false;
+    askPageLimit().then(function (limit) {
+      runScan(file, limit).catch(function (err) {
+        try { console.error("[scan-pdf]", err); } catch (e) { /* ignore */ }
+        addStep("active", "Scan failed");
+        markStepDone("Error: " + (err && err.message ? err.message : String(err)));
+        updateProcTitle("Scan failed \u2014 try again");
+        setBusy(false);
+        _scanning = false;
+      });
+    }).catch(function () {
+      /* User cancelled the page-limit modal — back to upload. */
+      resetToUpload();
+    });
+  }
+
+  /* Page-limit modal (same options/behavior as the index page). */
+  function askPageLimit() {
+    return new Promise(function (resolve, reject) {
+      var backdrop = $("pageLimitBackdrop");
+      var options = $("pageLimitOptions");
+      var cancelBtn = $("pageLimitCancel");
+      if (!backdrop || !options) {
+        try { console.warn("[scan-pdf] page-limit modal missing from DOM — scanning all pages"); } catch (e) { /* ignore */ }
+        resolve(null); // no modal in DOM — scan all pages
+        return;
+      }
+      options.querySelectorAll(".page-opt-btn").forEach(function (b) {
+        b.classList.remove("selected");
+      });
+      backdrop.classList.remove("hidden");
+      function cleanup() {
+        backdrop.classList.add("hidden");
+        options.removeEventListener("click", onOption);
+        if (cancelBtn) cancelBtn.removeEventListener("click", onCancel);
+        backdrop.removeEventListener("click", onBackdrop);
+      }
+      function onOption(e) {
+        var btn = e.target.closest(".page-opt-btn");
+        if (!btn) return;
+        options.querySelectorAll(".page-opt-btn").forEach(function (b) {
+          b.classList.remove("selected");
+        });
+        btn.classList.add("selected");
+        var raw = btn.dataset.limit;
+        var limit = (raw === "all" || !raw) ? null : parseInt(raw, 10);
+        setTimeout(function () { cleanup(); resolve(limit); }, 220);
+      }
+      function onCancel() { cleanup(); reject(new Error("cancelled")); }
+      function onBackdrop(e) { if (e.target === backdrop) onCancel(); }
+      options.addEventListener("click", onOption);
+      if (cancelBtn) cancelBtn.addEventListener("click", onCancel);
+      backdrop.addEventListener("click", onBackdrop);
     });
   }
 
@@ -130,7 +176,7 @@
     if (btnPdf) btnPdf.disabled = busy || !_engineReady;
   }
 
-  function runScan(file) {
+  function runScan(file, pageLimit) {
     if (!window.pdfjsLib || !window.PDFLib) {
       return Promise.reject(new Error("Local PDF engine is still loading. Please try again."));
     }
@@ -138,7 +184,7 @@
       return Promise.reject(new Error("Scan engine is still warming up. Please wait for 'ready' and try again."));
     }
     if (file.size > MAX_LOCAL_PDF_BYTES) {
-      return Promise.reject(new Error("This PDF is larger than the 50 MB local-processing limit."));
+      return Promise.reject(new Error("This PDF is larger than the 250 MB local-processing limit."));
     }
 
     showProcessing();
@@ -149,12 +195,13 @@
     var source = null;
     var output = null;
     var worker = _engineWorker; // persistent warm worker — never terminated per scan
+    var pagesToScan = 0;
     var pageImages = [];
 
     return loadPdfBytes(file)
       .then(function (bytes) {
         addStep("active", "Loading PDF in browser\u2026");
-        return window.pdfjsLib.getDocument({ data: bytes }).promise;
+        return loadPdfDocument(bytes, 60000);
       })
       .then(function (src) {
         source = src;
@@ -162,7 +209,7 @@
         if (source.numPages > MAX_LOCAL_PDF_PAGES) {
           throw new Error("This PDF has " + source.numPages + " pages. Local scanning supports up to " + MAX_LOCAL_PDF_PAGES + " pages.");
         }
-        var pagesToScan = source.numPages;
+        pagesToScan = pageLimit != null ? Math.min(source.numPages, pageLimit) : source.numPages;
         showPageCounter(0, pagesToScan);
         showProgressBar(0, pagesToScan);
         updateProcTitle("Scanning " + pagesToScan + " pages\u2026");
@@ -171,7 +218,7 @@
       .then(function (doc) {
         output = doc;
         addStep("done", "Engine worker ready");
-        return processPages(source, source.numPages, worker, output, pageImages);
+        return processPages(source, pagesToScan, worker, output, pageImages);
       })
       .then(function () {
         addStep("active", "Building PDF\u2026");
@@ -197,6 +244,48 @@
 
   function loadPdfBytes(file) {
     return file.arrayBuffer().then(function (buf) { return new Uint8Array(buf); });
+  }
+
+  /* getDocument with a timeout: a hung pdf.js worker otherwise stalls the UI
+   * forever with no error. Rejects with an actionable message instead. */
+  function loadPdfDocument(bytes, timeoutMs) {
+    return new Promise(function (resolve, reject) {
+      var settled = false;
+      var task = null;
+      var timer = setTimeout(function () {
+        if (settled) return;
+        settled = true;
+        try { if (task && task.destroy) task.destroy(); } catch (e) { /* ignore */ }
+        reject(new Error(
+          "PDF load timed out after " + Math.round(timeoutMs / 1000) + "s. " +
+          "The pdf.js worker (/static/vendor/pdf.worker.js) is probably blocked — " +
+          "check DevTools Console/Network for worker errors."));
+      }, timeoutMs);
+      try {
+        task = window.pdfjsLib.getDocument({ data: bytes });
+      } catch (err) {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          reject(err);
+        }
+        return;
+      }
+      task.promise.then(
+        function (doc) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          resolve(doc);
+        },
+        function (err) {
+          if (settled) return;
+          settled = true;
+          clearTimeout(timer);
+          reject(err instanceof Error ? err : new Error("Could not open PDF: " + String(err)));
+        }
+      );
+    });
   }
 
   function processPages(source, pagesToScan, worker, output, pageImages) {

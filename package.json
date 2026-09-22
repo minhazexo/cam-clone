@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "bun run build && python app.py",
     "build": "bun run scripts/build.ts",
-    "check": "bun run scripts/check.ts"
+    "check": "bun run scripts/check.ts",
+    "parity": "node tests/parity_worker.js && node tests/parity_geometry.js && node tests/parity_full.js"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1",
