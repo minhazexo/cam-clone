@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RScan — Scan PDF Locally (Full Quality)</title>
+    <meta name="description" content="RScan local full-quality PDF scanner. The scan engine downloads once, then everything runs on your device — no size limits.">
+    <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+<header class="header">
+    <div class="header-inner">
+        <div class="logo">
+            <svg class="logo-icon" viewBox="0 0 32 32" fill="none"><rect x="4" y="2" width="24" height="28" rx="3" stroke="currentColor" stroke-width="2.2"/><line x1="9" y1="9" x2="23" y2="9" stroke="currentColor" stroke-width="1.8" opacity=".4"/><line x1="9" y1="14" x2="23" y2="14" stroke="currentColor" stroke-width="1.8" opacity=".4"/><line x1="9" y1="19" x2="18" y2="19" stroke="currentColor" stroke-width="1.8" opacity=".4"/><circle cx="12" cy="25" r="1.5" fill="currentColor" opacity=".4"/></svg>
+            <span class="logo-text">RScan</span>
+        </div>
+        <p class="tagline">Local Full-Quality Scan — engine downloads once, then unlimited pages on your device</p>
+    </div>
+</header>
+
+<main class="main">
+    <section class="upload-section" id="uploadSection">
+        <div class="upload-zone" id="uploadZone">
+            <h1 class="upload-title">Scan any size PDF, fully on-device</h1>
+            <p class="upload-subtitle">Drop a PDF here — rendered, scanned and assembled in your browser</p>
+            <p class="upload-formats">Supports: PDF (any size, any pages)</p>
+            <p class="local-note" id="engineStatus"><span aria-hidden="true">&#9679;</span> Loading scan engine…</p>
+            <input type="file" id="fileInput" accept=".pdf" hidden>
+            <div class="upload-buttons">
+                <button class="btn btn-primary" id="btnPdf">Scan PDF Locally</button>
+            </div>
+        </div>
+    </section>
+
+    <section class="processing-section hidden" id="processingSection">
+        <h2 class="proc-title" id="procTitle">Scanning your document…</h2>
+        <div class="page-counter hidden" id="pageCounter">
+            <span class="page-current" id="pageCurrent">0</span>
+            <span class="page-sep">/</span>
+            <span class="page-total" id="pageTotal">0</span>
+            <span class="page-label">pages</span>
+        </div>
+        <div class="progress-bar-wrap hidden" id="progressBarWrap">
+            <div class="progress-bar" id="progressBar"></div>
+            <span class="progress-pct" id="progressPct">0%</span>
+        </div>
+        <ul class="step-log" id="stepLog" aria-live="polite"></ul>
+    </section>
+
+    <section class="results-section hidden" id="resultsSection">
+        <div class="results-header">
+            <h2>Scanned Results</h2>
+            <div class="results-actions">
+                <button class="btn btn-primary" id="btnDownloadAll">Download All</button>
+                <button class="btn btn-outline" id="btnScanMore">Scan More</button>
+            </div>
+        </div>
+        <div class="results-grid" id="resultsGrid"></div>
+    </section>
+</main>
+
+<footer class="footer">
+    <p>RScan Document Scanner &mdash; on-device OpenCV pipeline, no cloud</p>
+</footer>
+
+<script src="/static/js/opencv-loader.js"></script>
+<script src="{{ url_for('static', filename='vendor/runtime.js') }}" type="module"></script>
+<!-- Scan worker chain: /static/js/scan-worker-v2.js with fallback to /static/js/scan-worker.js (resolved in scanpdf.js) -->
+<script src="/static/js/scanpdf.js"></script>
+</body>
+</html>

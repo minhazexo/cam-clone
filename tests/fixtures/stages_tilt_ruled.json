@@ -1,0 +1,65 @@
+{
+ "input": {
+  "w": 800,
+  "h": 1100,
+  "est": -1.965,
+  "sharp": 1121.3
+ },
+ "contour": {
+  "corners": null
+ },
+ "dewarp": {
+  "null": false
+ },
+ "dewarp_img": {
+  "w": 800,
+  "h": 1100,
+  "est": 0.0,
+  "sharp": 872.9
+ },
+ "geom_pretrim": {
+  "w": 800,
+  "h": 1100,
+  "est": 0.0,
+  "sharp": 872.9
+ },
+ "geom_chain": {
+  "w": 778,
+  "h": 1067,
+  "est": 0.0,
+  "sharp": 912.2
+ },
+ "enhanced": {
+  "w": 778,
+  "h": 1067,
+  "est": 0.0,
+  "sharp": 2115.0
+ },
+ "reframe": {
+  "w": 858,
+  "h": 1143,
+  "est": 0.0,
+  "sharp": 1823.4
+ },
+ "binding": {
+  "removed": false
+ },
+ "binding_img": {
+  "w": 858,
+  "h": 1143,
+  "est": 0.0,
+  "sharp": 1823.4
+ },
+ "corner": {
+  "w": 858,
+  "h": 1143,
+  "est": 0.0,
+  "sharp": 1823.4
+ },
+ "border": {
+  "w": 858,
+  "h": 1143,
+  "est": 0.0,
+  "sharp": 1823.4
+ }
+}

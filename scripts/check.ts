@@ -1,6 +1,7 @@
 const required = [
   "static/vendor/runtime.js",
   "static/vendor/pdf.worker.js",
+  "static/vendor/opencv.js",
 ];
 
 for (const path of required) {

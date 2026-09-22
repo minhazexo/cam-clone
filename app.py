@@ -26,8 +26,14 @@ import numpy as np
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "RScan", "Python", "scan"))
 from auto_scan import scan_photo_to_reference
 
-app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB
+ROOT = os.path.dirname(os.path.abspath(__file__))
+
+# Absolute template/static folders: serverless runtimes (Vercel) may run the
+# app with a different working directory, so never rely on relative paths.
+app = Flask(__name__,
+            template_folder=os.path.join(ROOT, "templates"),
+            static_folder=os.path.join(ROOT, "static"))
+app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB (local; Vercel caps bodies ~4.5 MB)
 
 LOG_LEVEL = logging.DEBUG if os.environ.get("RSCAN_DEBUG", "0") == "1" else logging.INFO
 logging.basicConfig(level=LOG_LEVEL, format="%(asctime)s %(levelname)s %(name)s %(message)s")
@@ -87,6 +93,18 @@ def _allowed(filename):
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.route("/api/health")
+def api_health():
+    """Liveness probe for uptime checks and post-deploy verification."""
+    return jsonify(status="ok", service="rscan")
+
+
+@app.route("/scan-pdf")
+def scan_pdf_page():
+    """Dedicated on-device full-quality scan page (scan engine loads in-page)."""
+    return render_template("scan_pdf.html")
 
 
 @app.route("/api/scan", methods=["POST"])

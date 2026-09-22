@@ -1,4 +1,7 @@
 flask>=3.0
-opencv-python>=5.0
+# headless: Vercel (and most containers) has no libGL, which opencv-python
+# needs. No GUI calls exist in this repo (no imshow/waitKey), so headless
+# is a drop-in replacement locally and in the cloud.
+opencv-python-headless>=4.8
 numpy>=1.24
 pymupdf>=1.23
