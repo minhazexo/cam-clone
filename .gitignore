@@ -45,3 +45,12 @@ pdf files/
 
 # Local deep-dive docs (never commit)
 docs/
+
+# Virtualenv (already ignored via .venv/.gitignore, belt-and-suspenders)
+.venv/
+
+# Local test images / outputs (never commit)
+test image.jpg
+test image output after scanning/
+IMG-*.jpg
+verification-report.txt

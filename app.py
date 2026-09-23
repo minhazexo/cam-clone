@@ -88,6 +88,27 @@ def _allowed(filename):
     return ext in ALLOWED_IMAGE_EXT | ALLOWED_PDF_EXT
 
 
+def _decode_image(data, arr):
+    """Decode upload bytes to BGR, honoring EXIF orientation.
+
+    Phone photos are often stored rotated with an EXIF orientation flag
+    that cv.imdecode ignores (sideways scans). Pillow applies the flag via
+    exif_transpose; falls back to plain imdecode when Pillow is absent.
+    """
+    try:
+        from PIL import Image, ImageOps
+        import io
+        with Image.open(io.BytesIO(data)) as im:
+            im = ImageOps.exif_transpose(im).convert("RGB")
+            return cv.cvtColor(np.asarray(im), cv.COLOR_RGB2BGR)
+    except Exception:
+        pass
+    try:
+        return cv.imdecode(arr, cv.IMREAD_COLOR)
+    except Exception:
+        return None
+
+
 # ── Routes ──────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -135,7 +156,7 @@ def api_scan():
             continue
 
         arr = np.frombuffer(data, dtype=np.uint8)
-        img = cv.imdecode(arr, cv.IMREAD_COLOR)
+        img = _decode_image(data, arr)
         if img is None:
             continue
 

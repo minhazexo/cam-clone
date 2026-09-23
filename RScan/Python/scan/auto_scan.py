@@ -79,7 +79,18 @@ def find_document_contour(image, min_area_ratio=0.25):
 
 
 def warp_to_rectangle(image, corners):
-    """Perspective-warp the quad ``corners`` to a top-down rectangle."""
+    """Perspective-warp the quad ``corners`` to a top-down rectangle.
+
+    The quad is expanded ~1% about its center (clamped to the frame) first:
+    contour fits routinely sit a few pixels inside the true page edge, and
+    without this guard edge content is clipped for every input picture.
+    """
+    h, w = image.shape[:2]
+    corners = np.asarray(corners, dtype="float32").reshape(4, 2)
+    center = corners.mean(axis=0)
+    corners = center + (corners - center) * 1.01
+    corners[:, 0] = np.clip(corners[:, 0], 0, w - 1)
+    corners[:, 1] = np.clip(corners[:, 1], 0, h - 1)
     (tl, tr, br, bl) = corners
     width_a = np.linalg.norm(br - bl)
     width_b = np.linalg.norm(tr - tl)
@@ -477,12 +488,15 @@ def trim_white_fill_bands(image, ink_threshold=240, max_fraction=0.08):
     return image[y0:y1, x0:x1]
 
 
-def trim_smeared_top_band(image, max_fraction=0.06, thresh_ratio=0.30):
+def trim_smeared_top_band(image, max_fraction=0.10, thresh_ratio=0.50):
     """Cut a warp-smeared band at the top edge, if present.
 
     Perspective extrapolation can stretch near-edge content into a blurry
-    strip. Detect rows with almost no edge energy and drop them (capped at
-    ``max_fraction`` of height). No-op on already-clean pages.
+    strip; desk bands behind the page are equally texture-free. Detect rows
+    with almost no edge energy and drop them (capped at ``max_fraction`` of
+    height). The 0.50 ratio (not lower) is load-bearing: real content rows
+    always carry stroke energy well above half the page median, while
+    uniform desk/shadow rows sit far below it. No-op on already-clean pages.
     """
     h, w = image.shape[:2]
     gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY) if image.ndim == 3 else image
@@ -526,16 +540,15 @@ def edge_darkness_profile(gray, thresh=100, smooth=15, win_frac=0.25):
 def cut_dark_edge_bands(image, left_thresh=0.25, right_thresh=0.13,
                         left_cap=0.06, right_cap=0.16, smooth=15,
                         min_coil_width_ratio=0.04):
-    """Cut page-gap shadow (left) and spiral-coil band (right) adaptively.
+    """Cut the page-gap shadow (left) adaptively; never touch the right.
 
     Operates on the rectified but NOT yet enhanced photo. Already-clean
     scans (bright overall) are returned untouched. Left: the gap shadow is
     *solid* dark, so a high sustained threshold never touches text. Right:
-    only a *wide* sustained dark run (coil rings span 10%+ of the width;
-    text strokes and punched-hole dots do not) is cut. The per-column
-    darkness is measured with :func:`edge_darkness_profile`, which keeps
-    bands that only cover the top of the page (the common case on
-    full-frame phone photos). No-op if nothing qualifies.
+    deliberately no cut — dense content sustains edge darkness exactly like
+    coil bands, and every automatic right cut tested ate real text; coil
+    cosmetics belong to remove_binding_rings, and reference outputs keep
+    the binding visible. No-op if nothing qualifies.
     """
     h, w = image.shape[:2]
     gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY) if image.ndim == 3 else image
@@ -545,12 +558,13 @@ def cut_dark_edge_bands(image, left_thresh=0.25, right_thresh=0.13,
     x0 = 0
     while x0 <= int(w * left_cap) and smooth_frac[x0] > left_thresh:
         x0 += 1
+    # Right side: NO cut. Dense page content (tables, handwriting) sustains
+    # high edge darkness exactly like coil bands do, so any profile- or
+    # mass-based right cut eats real text (verified: a 193px cut removed
+    # table equations while the mass gate still stopped inside content).
+    # Coil cosmetics belong to remove_binding_rings (precise inpaint), and
+    # reference outputs keep the binding visible anyway. Never cut right.
     x1 = w
-    run_start = w
-    while run_start > w - int(w * right_cap) and smooth_frac[run_start - 1] > right_thresh:
-        run_start -= 1
-    if (w - run_start) >= max(8, int(w * min_coil_width_ratio)):
-        x1 = run_start
     if x1 - x0 < w // 2:
         return image
     return image[:, x0:x1]
@@ -673,8 +687,14 @@ def remove_binding_rings(image, zone_ratio=0.78, dark=70, min_thick=2.0,
     Rings are the only structures that are simultaneously very dark, thick
     (distance-transform radius), tall, non-horizontal, and living in the
     right edge zone. Horizontal rulings are subtracted first; thin ink
-    strokes never qualify by thickness/height. Operates on the *enhanced*
-    image where rings are pure black on white paper. Returns (image,
+    strokes never qualify by thickness/height. A second pass catches ring
+    *edges*: metallic rings photograph with bright cores, so only their
+    outlines are dark (too thin for the thickness gate) — but those
+    outlines form long straight diagonals sharing one dominant angle,
+    which handwriting never does. That pass is adaptive (peak angle,
+    vertical notch for table borders, length gate, 3% area cap) and only
+    fires with >= 5 agreeing segments. Operates on the *enhanced* image
+    where rings are pure black on white paper. Returns (image,
     removed_bool).
     """
     work = image.copy()
@@ -701,8 +721,15 @@ def remove_binding_rings(image, zone_ratio=0.78, dark=70, min_thick=2.0,
         frac_right = float((xs >= x_zone).mean())
         if frac_right > 0.6 and (cw > 6 or ch > 6):
             mask[lab == i] = 255
-    # Grow slightly into anti-aliased ring edges, then inpaint.
+    # Grow slightly into anti-aliased ring edges.
     mask = cv.dilate(mask, cv.getStructuringElement(cv.MORPH_ELLIPSE, (5, 5)))
+    # Union with the diagonal pass (metallic bright-core rings whose
+    # outlines are too thin for the thickness gate but share one dominant
+    # diagonal angle — see _diagonal_ring_mask, returns a full-size mask
+    # or None).
+    diag = _diagonal_ring_mask(gray, zone_ratio)
+    if diag is not None:
+        mask = np.maximum(mask, diag)
     if int((mask > 0).sum()) < 50:
         return work, False
     if work.ndim == 3:
@@ -710,6 +737,48 @@ def remove_binding_rings(image, zone_ratio=0.78, dark=70, min_thick=2.0,
     else:
         work = cv.inpaint(work, mask, 5, cv.INPAINT_TELEA)
     return work, True
+
+
+def _diagonal_ring_mask(gray, zone_ratio=0.78):
+    """Mask of dominant-diagonal long segments in the right zone, or None.
+
+    Returns None unless >= 5 segments agree on a 5-degree peak (outside the
+    86-94 vertical notch that protects table borders), each >= 80px long,
+    and the dilated total stays under 3% of the image (catastrophe guard).
+    Handwriting never produces this signature; spiral rings always do.
+    """
+    h, w = gray.shape[:2]
+    zx = int(w * zone_ratio)
+    zone = gray[:, zx:]
+    edges = cv.Canny(zone, 50, 150)
+    lines = cv.HoughLinesP(edges, 1, np.pi / 180, 80,
+                           minLineLength=80, maxLineGap=12)
+    if lines is None or len(lines) < 5:
+        return None
+    angs = []
+    for x1, y1, x2, y2 in np.asarray(lines).reshape(-1, 4):
+        a = math.degrees(math.atan2(y2 - y1, x2 - x1))
+        a = abs(a) if abs(a) <= 90 else 180 - abs(a)  # 0..90 line angle
+        if 55.0 <= a <= 90.0 and not 86.0 <= a <= 94.0:
+            angs.append(((x1, y1, x2, y2), a, math.hypot(x2 - x1, y2 - y1)))
+    if len(angs) < 5:
+        return None
+    hist = {}
+    for _, a, _ in angs:
+        hist[int(a // 5) * 5] = hist.get(int(a // 5) * 5, 0) + 1
+    peak = max(hist, key=hist.get)
+    if hist[peak] < 5:
+        return None
+    diag = np.zeros_like(zone)
+    for (x1, y1, x2, y2), a, ln in angs:
+        if ln >= 80 and abs(a - (peak + 2.5)) <= 10.0:
+            cv.line(diag, (x1, y1), (x2, y2), 255, 1)
+    diag = cv.dilate(diag, cv.getStructuringElement(cv.MORPH_ELLIPSE, (7, 7)))
+    if int((diag > 0).sum()) > 0.03 * h * w:
+        return None
+    full = np.zeros((h, w), np.uint8)
+    full[:, zx:] = diag
+    return full
 
 
 def whiten_corner_smears(image, bright_lo=150, diff=18, max_ratio=0.06):
@@ -810,6 +879,24 @@ def reframe_like_reference(image, ink_threshold=160,
     cols = np.where(clean.any(axis=0))[0]
     y0, y1 = int(rows.min()), int(rows.max()) + 1
     x0, x1 = int(cols.min()), int(cols.max()) + 1
+    # Fringe extension: faint content (watermarks, pencil, anti-aliased
+    # edges) just outside the dark-ink box must not be dropped from the
+    # canvas. Reach outward up to 1.5% per side, but only through faint ink
+    # (< 200) — bounded, so shadows can't blow up the page.
+    faint = gray < 200
+    pad_y, pad_x = max(1, int(h * 0.015)), max(1, int(w * 0.015))
+    up = np.where(faint[max(0, y0 - pad_y):y0, x0:x1].any(axis=1))[0]
+    if len(up):
+        y0 = max(0, y0 - pad_y) + int(up.min())
+    dn = np.where(faint[y1:min(h, y1 + pad_y), x0:x1].any(axis=1))[0]
+    if len(dn):
+        y1 = min(y1 + int(dn.max()) + 1, h)
+    lf = np.where(faint[y0:y1, max(0, x0 - pad_x):x0].any(axis=0))[0]
+    if len(lf):
+        x0 = max(0, x0 - pad_x) + int(lf.min())
+    rt = np.where(faint[y0:y1, x1:min(w, x1 + pad_x)].any(axis=0))[0]
+    if len(rt):
+        x1 = min(x1 + int(rt.max()) + 1, w)
     bw, bh = x1 - x0, y1 - y0
     if bw < w // 4 or bh < h // 4:
         return image  # degenerate detection; keep input
@@ -916,15 +1003,50 @@ def trim_coil_margin(image, zone_width=0.12, row_lo=0.10, row_hi=0.92,
     return image[:, left_cut:x1]
 
 
-def auto_trim_margins(image, left=0.008, right=0.02, top=0.01, bottom=0.02):
-    """Micro-border trim. Heavy lifting (shadow/coil) is done adaptively by
-    cut_dark_edge_bands; defaults stay small so text is never eaten."""
+def auto_trim_margins(image, left=0.008, right=0.02, top=0.01, bottom=0.02,
+                      ink_threshold=160,
+                      band_top=0.12, band_bottom=0.12,
+                      band_left=0.08, band_right=0.08):
+    """Micro-border trim that never eats content, in two tiers.
+
+    Tier 1 removes ink-free outer rows/cols (rotation-fill triangles, warp
+    slivers) within small caps. Tier 2 removes dark BANDS (desk, vignette):
+    runs with dark-fraction >= 0.5, proven by at least one nearly-solid row
+    (>= 0.98), skipped rows darker on average than 170 (bright-bg text can
+    never qualify). Frame-edge votes are skipped (unreliable pixels) but cut
+    along only with a proven band, so at most one invisible edge row/col is
+    ever at stake. Heavy lifting (shadow/coil) stays in cut_dark_edge_bands.
+    """
     h, w = image.shape[:2]
-    x0 = int(w * left)
-    x1 = int(w * (1.0 - right))
-    y0 = int(h * top)
-    y1 = int(h * (1.0 - bottom))
+    gray = cv.cvtColor(image, cv.COLOR_BGR2GRAY) if image.ndim == 3 else image
+    has_ink_col = (gray.min(axis=0) <= ink_threshold)
+    has_ink_row = (gray.min(axis=1) <= ink_threshold)
+
+    # Tier 1: ink-free, small caps.
+    x0 = 0
+    while x0 <= int(w * left) and not has_ink_col[x0]:
+        x0 += 1
+    x1 = w
+    while x1 > w - int(w * right) and not has_ink_col[x1 - 1]:
+        x1 -= 1
+    y0 = 0
+    while y0 <= int(h * top) and not has_ink_row[y0]:
+        y0 += 1
+    y1 = h
+    while y1 > h - int(h * bottom) and not has_ink_row[y1 - 1]:
+        y1 -= 1
+
+    # Tier 2: dark bands, wider caps (continues where tier 1 stopped).
+    # REMOVED (was: cut runs with dark-fraction >= 0.5 proven by a solid
+    # row): on dark-background headers (e.g. white "Theme:" text sitting on
+    # desk shadow has identical stats to the shadow itself) it ate real
+    # content. Desk bands are removed instead by the post-enhance top trim
+    # in scan_photo_to_reference, where enhancement has already turned
+    # background white and text black, separating them cleanly. The band_*
+    # params below are kept for API compatibility only.
     if x1 - x0 < w // 2 or y1 - y0 < h // 2:
+        return image
+    if x0 == 0 and y0 == 0 and x1 == w and y1 == h:
         return image
     return image[y0:y1, x0:x1]
 
@@ -1028,14 +1150,18 @@ def enhance_reference_look(image, ksize=None, white_point=None, black_point=None
 def scan_photo_to_reference(image, ksize=None, white_point=None,
                             black_point=None, black_point2=None,
                             trim=True, reframe=True,
-                            output_scale=2.0, ref_aspect=REF_ASPECT):
+                            output_scale=2.0, ref_aspect=REF_ASPECT,
+                            preserve_borders=False):
     """Convert one phone photo (BGR) to reference-quality scan (BGR).
 
     Geometry first (warp or deskew+trim), photometry second, reference
     framing last. ``output_scale`` upscales the final scan (reference.png
     is ~2x the wiki photo's pixels). ``ref_aspect`` locks the canvas
     aspect ratio to the reference (width/height) so the output crop
-    matches reference.png. Never raises on degenerate input:
+    matches reference.png. ``preserve_borders`` keeps the full frame:
+    edge trims, coil/binding removal and border whitening are skipped, so
+    spiral coils, edge notes and watermarks survive — only straightening,
+    cleaning and framing apply. Never raises on degenerate input:
     falls back to photometry-only.
     """
     if image is None or getattr(image, "size", 0) == 0:
@@ -1075,13 +1201,14 @@ def scan_photo_to_reference(image, ksize=None, white_point=None,
                     working = deskew(working)
                 except Exception:
                     pass
-            try:
-                working = cut_dark_edge_bands(working)
-                working = trim_white_fill_bands(working)
-                working = trim_smeared_top_band(working)
-            except Exception:
-                pass
-            if trim:
+            if not preserve_borders:
+                try:
+                    working = cut_dark_edge_bands(working)
+                    working = trim_white_fill_bands(working)
+                    working = trim_smeared_top_band(working)
+                except Exception:
+                    pass
+            if trim and not preserve_borders:
                 try:
                     working = auto_trim_margins(working)
                 except Exception:
@@ -1097,11 +1224,28 @@ def scan_photo_to_reference(image, ksize=None, white_point=None,
         enhanced = cv.addWeighted(enhanced, 1.9, softened, -0.9, 0)
     if reframe:
         try:
+            # Binding rings are removed FIRST, on the unrotated reframed
+            # image: residual rotation antialiasing thins ring cores below
+            # the thickness gate (rings survive), and reframe upscales to a
+            # size where the gate is reliable. Crisp rings inpaint cleanly;
+            # text strokes never qualify (thin, low zone fraction).
+            # Corner/border whitening stay last (they need final edges).
+            if not template_aligned and not preserve_borders:
+                tmp_ref = reframe_like_reference(enhanced, ref_aspect=ref_aspect)
+                enhanced = remove_binding_rings(tmp_ref)[0]
+                del tmp_ref
             # Enhancement exposes faint rulings the geometry stage could not
             # see, so a small residual curl may remain. Straighten it now,
             # before re-framing (the margins are re-measured afterwards).
             if not template_aligned:
                 enhanced = residual_deskew(enhanced)
+            # Post-enhance top trim: desk/shadow above the page turns white
+            # under enhancement while text turns black, so ink-gated top rows
+            # now separate cleanly (pre-enhance both are dark). Bottom is
+            # deliberately untouched (watermarks live there).
+            if not template_aligned:
+                enhanced = auto_trim_margins(
+                    enhanced, left=0, right=0, top=0.12, bottom=0)
             # IMPORTANT: cleanup passes must run AFTER re-framing. On a
             # full-frame phone photo the page edge IS the image border, so
             # running border/corner whitening before reframe erases real
@@ -1109,10 +1253,16 @@ def scan_photo_to_reference(image, ksize=None, white_point=None,
             # centers a truncated document. In the reframed output, edges
             # are pure-white margins where artifact removal is safe.
             if not template_aligned:
-                enhanced = reframe_like_reference(enhanced, ref_aspect=ref_aspect)
-                enhanced = remove_binding_rings(enhanced)[0]
+                # Second reframe (halved margins — the first pass already
+                # framed the content): restores clean white edges for the
+                # whitening passes below after rotation/trimming.
+                enhanced = reframe_like_reference(
+                    enhanced, ref_aspect=ref_aspect,
+                    left=REF_MARGIN_LEFT / 2, right=REF_MARGIN_RIGHT / 2,
+                    top=REF_MARGIN_TOP / 2, bottom=REF_MARGIN_BOTTOM / 2)
                 enhanced = whiten_corner_smears(enhanced)
-                enhanced = whiten_border_artifacts(enhanced)
+                if not preserve_borders:
+                    enhanced = whiten_border_artifacts(enhanced)
             else:
                 # The template already supplies the reference canvas; retain
                 # page detail, but remove the neighboring page strip outside

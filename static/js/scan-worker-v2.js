@@ -289,19 +289,31 @@ function processPage(rgba, w, h) {
     rgb[j + 2] = bytes[i + 2];
   }
   var src = cv.matFromArray(h, w, cv.CV_8UC3, rgb);
-  var working = null, enh = null, res = null, ref = null, rb = null, wc = null, wb = null, sharp = null;
+  var working = null, enh = null, res = null, ref = null, wc = null, wb = null, sharp = null;
   try {
     working = G.scanGeometryChain(src); // deletes src when replaced
     enh = enhanceReferenceLook(working);
     if (enh !== working) working.delete();
+    // Reframe-then-bind order mirrors Python: binding needs the upscaled
+    // unrotated canvas for its thickness gate; residual rotation would
+    // antialias ring cores below it.
+    var ref0 = G.reframeLikeReference(enh, { refAspect: REF_ASPECT_FALLBACK });
+    if (ref0 !== enh) enh.delete();
+    var eb = G.removeBindingRings(ref0);
+    ref0.delete();
+    enh = eb.mat;
     res = G.residualDeskew(enh);
     if (res !== enh) enh.delete();
-    ref = G.reframeLikeReference(res, { refAspect: REF_ASPECT_FALLBACK });
+    var trimmed = G.autoTrimMargins(res, 0, 0, 0.12, 0);
+    if (trimmed !== res) res.delete();
+    res = trimmed;
+    // Second reframe with halved margins (mirrors Python): restores clean
+    // white edges for whitening after rotation/trimming.
+    ref = G.reframeLikeReference(res, { refAspect: REF_ASPECT_FALLBACK,
+      left: 0.0345, right: 0.0355, top: 0.035, bottom: 0.02 });
     if (ref !== res) res.delete();
-    rb = G.removeBindingRings(ref);
+    wc = G.whitenCornerSmears(ref);
     ref.delete();
-    wc = G.whitenCornerSmears(rb.mat);
-    rb.mat.delete();
     wb = G.whitenBorderArtifacts(wc);
     wc.delete();
     sharp = unsharpLight(wb);
@@ -324,7 +336,7 @@ function processPage(rgba, w, h) {
     }
     return { data: out, width: sharp.cols, height: sharp.rows, sharpness: sharpness };
   } finally {
-    [src, working, enh, res, ref, rb && rb.mat, wc, wb, sharp].forEach(function (m) {
+    [src, working, enh, res, ref, wc, wb, sharp].forEach(function (m) {
       try { if (m && !m.isDeleted()) m.delete(); } catch (e) { /*noop*/ }
     });
   }

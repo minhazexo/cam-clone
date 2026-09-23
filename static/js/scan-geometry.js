@@ -143,6 +143,17 @@
   }
 
   function warpToRectangle(rgb, corners) {
+    // 1% anti-clip expansion about the quad center (mirrors Python).
+    var h0 = rgb.rows, w0 = rgb.cols, i;
+    var cx = 0, cy = 0;
+    for (i = 0; i < 4; i++) { cx += corners[i][0]; cy += corners[i][1]; }
+    cx /= 4; cy /= 4;
+    corners = corners.map(function (p) {
+      return [
+        Math.min(w0 - 1, Math.max(0, cx + (p[0] - cx) * 1.01)),
+        Math.min(h0 - 1, Math.max(0, cy + (p[1] - cy) * 1.01))
+      ];
+    });
     var tl = corners[0], tr = corners[1], br = corners[2], bl = corners[3];
     var maxW = Math.max(1, pyInt(Math.max(hyp(br[0] - bl[0], br[1] - bl[1]), hyp(tr[0] - tl[0], tr[1] - tl[1]))));
     var maxH = Math.max(1, pyInt(Math.max(hyp(tr[0] - br[0], tr[1] - br[1]), hyp(tl[0] - bl[0], tl[1] - bl[1]))));
@@ -478,8 +489,8 @@
   }
 
   function trimSmearedTopBand(rgb, maxFraction, threshRatio) {
-    if (maxFraction === undefined) maxFraction = 0.06;
-    if (threshRatio === undefined) threshRatio = 0.30;
+    if (maxFraction === undefined) maxFraction = 0.10;
+    if (threshRatio === undefined) threshRatio = 0.50;
     var h = rgb.rows, w = rgb.cols;
     var gray = grayOf(rgb);
     var gx = new cv.Mat();
@@ -542,9 +553,11 @@
       var prof = edgeDarknessProfile(gray);
       var x0 = 0, cap = pyInt(w * leftCap);
       while (x0 <= cap && prof[x0] > leftThresh) x0++;
-      var x1 = w, run = w, rcap = pyInt(w * rightCap);
-      while (run > w - rcap && prof[run - 1] > rightThresh) run--;
-      if (w - run >= Math.max(8, pyInt(w * minCoilW))) x1 = run;
+      // Right side: NO cut (mirrors Python). Dense content sustains edge
+      // darkness exactly like coil bands, so any automatic right cut eats
+      // real text; coil cosmetics belong to binding-ring inpaint, and
+      // reference outputs keep the binding visible.
+      var x1 = w;
       if (x1 - x0 < (w >> 1)) return rgb;
       if (x0 === 0 && x1 === w) return rgb;
       return rgb.roi(new cv.Rect(x0, 0, x1 - x0, h)).clone();
@@ -553,16 +566,59 @@
     }
   }
 
-  function autoTrimMargins(rgb, left, right, top, bottom) {
+  function autoTrimMargins(rgb, left, right, top, bottom, inkThreshold,
+      bandTop, bandBottom, bandLeft, bandRight) {
     if (left === undefined) left = 0.008;
     if (right === undefined) right = 0.02;
     if (top === undefined) top = 0.01;
     if (bottom === undefined) bottom = 0.02;
+    if (inkThreshold === undefined) inkThreshold = 160;
+    if (bandTop === undefined) bandTop = 0.12;
+    if (bandBottom === undefined) bandBottom = 0.12;
+    if (bandLeft === undefined) bandLeft = 0.08;
+    if (bandRight === undefined) bandRight = 0.08;
+    // Two tiers mirroring Python: tier 1 cuts ink-free rows/cols (small
+    // caps); tier 2 cuts dark bands proven by a nearly-solid row
+    // (dark-fraction >= 0.98), skipping darkish transition rows (mean <
+    // 170) and the frame-edge vote. Bright-bg text can never qualify.
     var h = rgb.rows, w = rgb.cols;
-    var x0 = pyInt(w * left), x1 = pyInt(w * (1.0 - right));
-    var y0 = pyInt(h * top), y1 = pyInt(h * (1.0 - bottom));
-    if (x1 - x0 < (w >> 1) || y1 - y0 < (h >> 1)) return rgb;
-    return rgb.roi(new cv.Rect(x0, y0, x1 - x0, y1 - y0)).clone();
+    var gray = grayOf(rgb);
+    var d = gray.data, x, y, v;
+    try {
+      var colHas = new Array(w), rowHas = new Array(h);
+      var colDark = new Array(w), rowDark = new Array(h);
+      var colMean = new Array(w), rowMean = new Array(h);
+      var c, s, cnt;
+      for (x = 0; x < w; x++) {
+        s = 0; cnt = 0; c = false;
+        for (y = 0; y < h; y++) { v = d[y * w + x]; s += v; if (v <= inkThreshold) { cnt++; c = true; } }
+        colMean[x] = s / h; colHas[x] = c; colDark[x] = cnt / h;
+      }
+      for (y = 0; y < h; y++) {
+        s = 0; cnt = 0; c = false;
+        var base = y * w;
+        for (x = 0; x < w; x++) { v = d[base + x]; s += v; if (v <= inkThreshold) { cnt++; c = true; } }
+        rowMean[y] = s / w; rowHas[y] = c; rowDark[y] = cnt / w;
+      }
+      var x0 = 0, xCap = pyInt(w * left);
+      while (x0 <= xCap && !colHas[x0]) x0++;
+      var x1 = w, xCapR = pyInt(w * right);
+      while (x1 > w - xCapR && !colHas[x1 - 1]) x1--;
+      var y0 = 0, yCap = pyInt(h * top);
+      while (y0 <= yCap && !rowHas[y0]) y0++;
+      var y1 = h, yCapB = pyInt(h * bottom);
+      while (y1 > h - yCapB && !rowHas[y1 - 1]) y1--;
+      var j, solid, df, mn;
+      // Tier 2 (dark-band walks) REMOVED to mirror Python: pre-enhance
+      // darkness cannot separate dark-background headers from desk shadow
+      // (it ate "Theme:"), so desk bands are removed only by the
+      // post-enhance top trim, where background is white and text black.
+      if (x1 - x0 < (w >> 1) || y1 - y0 < (h >> 1)) return rgb;
+      if (x0 === 0 && y0 === 0 && x1 === w && y1 === h) return rgb;
+      return rgb.roi(new cv.Rect(x0, y0, x1 - x0, y1 - y0)).clone();
+    } finally {
+      del(gray);
+    }
   }
 
   function trimCoilMargin(rgb, zoneWidth, rowLo, rowHi, darkThresh) {
@@ -782,6 +838,42 @@
       del(dark);
       if (y1 < 0) return rgb;
       y1++; x1++;
+      // Fringe extension (mirrors Python exactly): reach ≤1.5%/side to the
+      // extreme faint-ink (<200) pixel inside each pad window.
+      var padY = Math.max(1, pyInt(h * 0.015)), padX = Math.max(1, pyInt(w * 0.015));
+      var yy, xx, found, best;
+      var up0 = Math.max(0, y0 - padY);
+      best = -1;
+      for (yy = up0; yy < y0; yy++) {
+        found = false;
+        for (xx = x0; xx < x1; xx++) if (gd[yy * w + xx] < 200) { found = true; break; }
+        if (found) { best = yy; break; }
+      }
+      if (best >= 0) y0 = best;
+      var dn1 = Math.min(h, y1 + padY);
+      best = -1;
+      for (yy = dn1 - 1; yy >= y1; yy--) {
+        found = false;
+        for (xx = x0; xx < x1; xx++) if (gd[yy * w + xx] < 200) { found = true; break; }
+        if (found) { best = yy; break; }
+      }
+      if (best >= 0) y1 = Math.min(best + 1, h);
+      var lf0 = Math.max(0, x0 - padX);
+      best = -1;
+      for (xx = lf0; xx < x0; xx++) {
+        found = false;
+        for (yy = y0; yy < y1; yy++) if (gd[yy * w + xx] < 200) { found = true; break; }
+        if (found) { best = xx; break; }
+      }
+      if (best >= 0) x0 = best;
+      var rt1 = Math.min(w, x1 + padX);
+      best = -1;
+      for (xx = rt1 - 1; xx >= x1; xx--) {
+        found = false;
+        for (yy = y0; yy < y1; yy++) if (gd[yy * w + xx] < 200) { found = true; break; }
+        if (found) { best = xx; break; }
+      }
+      if (best >= 0) x1 = Math.min(best + 1, w);
       var bw = x1 - x0, bh = y1 - y0;
       if (bw < (w >> 2) || bh < (h >> 2)) return rgb;
       var minCW, minCH, canvasW, canvasH;

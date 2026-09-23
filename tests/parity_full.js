@@ -14,13 +14,10 @@ const GEOM_ABS = path.join(ROOT, 'static', 'js', 'scan-geometry.js');
 const WORKER_ABS = path.join(ROOT, 'static', 'js', 'scan-worker-v2.js');
 
 const BASE = {
-  tilt_ruled: { tilt: 0.00, tiltTol: 0.15, sharp: 1829.1, w: 808, h: 1143 },
-  // NOTE on tilt_plain: MAD is 0.04 (near-identical bytes) yet the estimator
-  // reads 0.00 on ours vs -0.89 on Python's — knife-edge Hough-median noise on
-  // the aspect-fit resampled grid (a real 0.89deg rotation would show MAD~10+).
-  // Python's own residual saw 0.00 (no-op, verified), so gate ±1.0 documents
-  // estimator instability, not pipeline divergence.
-  tilt_plain: { tilt: -0.89, tiltTol: 1.00, sharp: 2124.6, w: 738, h: 1044 },
+  // Regenerated after reframe-first binding order + post-enhance trim:
+  // tighter second reframe shrinks both fixtures a few px.
+  tilt_ruled: { tilt: 0.00, tiltTol: 0.15, sharp: 2002.2, w: 790, h: 1117 },
+  tilt_plain: { tilt: 0.00, tiltTol: 0.15, sharp: 2078.8, w: 791, h: 1119 },
 };
 
 function main() {
