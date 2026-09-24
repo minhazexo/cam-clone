@@ -31,7 +31,7 @@
   },
   "dependencies": {
     "pdf-lib": "^1.17.1",
-    "pdfjs-dist": "3.11.174"
+    "pdfjs-dist": "6.3.289"
   },
   "devDependencies": {
     "@types/bun": "latest"
