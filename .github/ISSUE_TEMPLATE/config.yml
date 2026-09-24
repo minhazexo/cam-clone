@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/minhazexo/cam-clone/security/advisories/new
+    about: Please report security issues privately via GitHub Security Advisories.
+  - name: Questions & discussion
+    url: https://github.com/minhazexo/cam-clone/discussions
+    about: Ask usage questions or discuss ideas (open a Discussion if enabled).

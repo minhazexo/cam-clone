@@ -1,7 +1,10 @@
+# RScan — Python runtime (web server + CLI scanner)
+# Install:  pip install -r requirements.txt
+#
+# Headless OpenCV is intentional: Vercel/containers have no libGL, and this
+# repo never calls imshow/waitKey, so opencv-python-headless is a drop-in.
+
 flask>=3.0
-# headless: Vercel (and most containers) has no libGL, which opencv-python
-# needs. No GUI calls exist in this repo (no imshow/waitKey), so headless
-# is a drop-in replacement locally and in the cloud.
 opencv-python-headless>=4.8
 numpy>=1.24
 pymupdf>=1.23

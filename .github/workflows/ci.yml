@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  frontend-parity:
+    name: Vendor check + parity harnesses
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install JS dependencies
+        run: bun install
+
+      - name: Vendor artifacts present
+        run: bun run check
+
+      - name: Parity (worker, geometry, full)
+        run: bun run parity
+
+  backend:
+    name: Python smoke + compile
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Byte-compile
+        run: python -m compileall -q app.py api RScan/Python/scan
+
+      - name: Import app (smoke)
+        run: python -c "from app import app; c = app.test_client(); r = c.get('/api/health'); assert r.status_code == 200 and r.get_json()['status'] == 'ok', r.data"
+
+      - name: Pages render
+        run: |
+          python - <<'PY'
+          from app import app
+          c = app.test_client()
+          for path in ("/", "/scan-pdf"):
+              r = c.get(path)
+              assert r.status_code == 200, (path, r.status_code)
+              html = r.get_data(as_text=True)
+              assert "uploadZone" in html, path
+          print("pages ok")
+          PY

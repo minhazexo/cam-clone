@@ -85,10 +85,7 @@ document.addEventListener("DOMContentLoaded", function () {
   if (btnPdf) {
     btnPdf.addEventListener("click", (e) => {
       e.stopPropagation();
-      if (!fileInput) return;
-      fileInput.accept = ".pdf";
-      fileInput.multiple = false;
-      fileInput.click();
+      // <a href="/scan-pdf"> — default navigation; JS only guards zone-click bubbling.
     });
   }
 

@@ -2,12 +2,32 @@
   "name": "rscan-smart-scanner",
   "private": true,
   "version": "0.2.0",
-  "description": "Local-first smart document scanner frontend",
+  "description": "CamScanner-style smart document scanner — Flask + OpenCV server API and fully on-device PDF scanning in the browser.",
+  "license": "GPL-3.0-only",
+  "homepage": "https://github.com/minhazexo/cam-clone#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/minhazexo/cam-clone.git"
+  },
+  "bugs": {
+    "url": "https://github.com/minhazexo/cam-clone/issues"
+  },
+  "keywords": [
+    "document-scanner",
+    "camscanner",
+    "ocr-adjacent",
+    "opencv",
+    "pdf",
+    "flask",
+    "wasm",
+    "on-device"
+  ],
   "scripts": {
     "dev": "bun run build && python app.py",
     "build": "bun run scripts/build.ts",
     "check": "bun run scripts/check.ts",
-    "parity": "node tests/parity_worker.js && node tests/parity_geometry.js && node tests/parity_full.js"
+    "parity": "node tests/parity_worker.js && node tests/parity_geometry.js && node tests/parity_full.js",
+    "test": "bun run check && bun run parity"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1",
@@ -15,5 +35,8 @@
   },
   "devDependencies": {
     "@types/bun": "latest"
+  },
+  "engines": {
+    "node": ">=18"
   }
 }

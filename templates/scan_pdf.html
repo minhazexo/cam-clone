@@ -8,35 +8,72 @@
     <meta name="description" content="RScan local full-quality PDF scanner. The scan engine downloads once, then everything runs on your device — no size limits.">
     <link rel="stylesheet" href="/static/css/style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 </head>
 <body>
+<div class="bg-mesh" aria-hidden="true"></div>
 
 <header class="header">
     <div class="header-inner">
-        <div class="logo">
-            <svg class="logo-icon" viewBox="0 0 32 32" fill="none"><rect x="4" y="2" width="24" height="28" rx="3" stroke="currentColor" stroke-width="2.2"/><line x1="9" y1="9" x2="23" y2="9" stroke="currentColor" stroke-width="1.8" opacity=".4"/><line x1="9" y1="14" x2="23" y2="14" stroke="currentColor" stroke-width="1.8" opacity=".4"/><line x1="9" y1="19" x2="18" y2="19" stroke="currentColor" stroke-width="1.8" opacity=".4"/><circle cx="12" cy="25" r="1.5" fill="currentColor" opacity=".4"/></svg>
+        <a class="logo" href="/" aria-label="RScan home">
+            <svg class="logo-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="4" y="2" width="24" height="28" rx="3" stroke="currentColor" stroke-width="2.2"/><line x1="9" y1="9" x2="23" y2="9" stroke="currentColor" stroke-width="1.8" opacity=".4"/><line x1="9" y1="14" x2="23" y2="14" stroke="currentColor" stroke-width="1.8" opacity=".4"/><line x1="9" y1="19" x2="18" y2="19" stroke="currentColor" stroke-width="1.8" opacity=".4"/><circle cx="12" cy="25" r="1.5" fill="currentColor" opacity=".4"/></svg>
             <span class="logo-text">RScan</span>
-        </div>
-        <p class="tagline">Local Full-Quality Scan — engine downloads once, then unlimited pages on your device</p>
+        </a>
+        <nav class="nav" aria-label="Primary">
+            <a class="nav-link" href="/">Scan Images</a>
+            <a class="nav-link active" href="/scan-pdf" aria-current="page">Scan PDF</a>
+        </nav>
+        <p class="tagline">On-device full-quality scan — engine loads once, then unlimited pages, no upload</p>
     </div>
 </header>
 
 <main class="main">
     <section class="upload-section" id="uploadSection">
-        <div class="upload-zone" id="uploadZone">
-            <h1 class="upload-title">Scan any size PDF, fully on-device</h1>
-            <p class="upload-subtitle">Drop a PDF here — rendered, scanned and assembled in your browser</p>
-            <p class="upload-formats">Supports: PDF (any size, any pages)</p>
-            <p class="local-note" id="engineStatus"><span aria-hidden="true">&#9679;</span> Loading scan engine…</p>
-            <input type="file" id="fileInput" accept=".pdf" hidden>
-            <div class="upload-buttons">
-                <button class="btn btn-primary" id="btnPdf">Scan PDF Locally</button>
+        <div class="hero">
+            <span class="eyebrow">100% in your browser · no server · no size limit</span>
+            <h1 class="hero-title">Scan any size PDF, <span class="grad-text">fully on-device</span></h1>
+            <p class="hero-sub">Rendered, corrected and assembled locally with the same OpenCV pipeline as the server — bit-for-bit parity.</p>
+
+            <div class="upload-zone" id="uploadZone">
+                <div class="upload-icon" aria-hidden="true">
+                    <svg viewBox="0 0 64 64" fill="none"><rect x="8" y="12" width="48" height="40" rx="4" stroke="currentColor" stroke-width="2.5"/><path d="M8 40l14-14 10 10 8-8 16 16" stroke="currentColor" stroke-width="2.5" stroke-linejoin="round"/><circle cx="22" cy="26" r="4" stroke="currentColor" stroke-width="2"/></svg>
+                </div>
+                <p class="upload-subtitle">Drop a PDF here, or click to browse</p>
+                <p class="upload-formats">Supports: PDF (any size, any pages · local cap 250&nbsp;MB / 250 pages)</p>
+                <p class="local-note" id="engineStatus" role="status"><span aria-hidden="true">&#9679;</span> Loading scan engine…</p>
+                <input type="file" id="fileInput" accept=".pdf" hidden>
+                <div class="upload-buttons">
+                    <button class="btn btn-primary" id="btnPdf" type="button" disabled>
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                        Scan PDF Locally
+                    </button>
+                </div>
             </div>
+
+            <ul class="trust-row" aria-label="Highlights">
+                <li><strong>No upload</strong><span>file never leaves device</span></li>
+                <li><strong>Any size</strong><span>engine caches once (~10&nbsp;MB)</span></li>
+                <li><strong>200 DPI</strong><span>server-parity quality</span></li>
+                <li><strong>A4 out</strong><span>uniform framed pages</span></li>
+            </ul>
         </div>
     </section>
 
     <section class="processing-section hidden" id="processingSection">
+        <div class="scanner-wrap" aria-hidden="true">
+            <div class="scanner-doc">
+                <svg viewBox="0 0 80 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <rect x="6" y="2" width="68" height="96" rx="6" fill="#f0f4ff" stroke="#c7d2fe" stroke-width="2"/>
+                    <rect x="16" y="16" width="48" height="6" rx="3" fill="#c7d2fe" opacity=".7"/>
+                    <rect x="16" y="28" width="48" height="6" rx="3" fill="#c7d2fe" opacity=".7"/>
+                    <rect x="16" y="40" width="36" height="6" rx="3" fill="#c7d2fe" opacity=".5"/>
+                    <rect x="16" y="58" width="48" height="6" rx="3" fill="#c7d2fe" opacity=".7"/>
+                    <rect x="16" y="70" width="32" height="6" rx="3" fill="#c7d2fe" opacity=".4"/>
+                </svg>
+                <div class="scan-line" id="scanLine"></div>
+            </div>
+        </div>
         <h2 class="proc-title" id="procTitle">Scanning your document…</h2>
         <div class="page-counter hidden" id="pageCounter">
             <span class="page-current" id="pageCurrent">0</span>
@@ -55,8 +92,14 @@
         <div class="results-header">
             <h2>Scanned Results</h2>
             <div class="results-actions">
-                <button class="btn btn-primary" id="btnDownloadAll">Download All</button>
-                <button class="btn btn-outline" id="btnScanMore">Scan More</button>
+                <button class="btn btn-primary" id="btnDownloadAll" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Download All
+                </button>
+                <button class="btn btn-outline" id="btnScanMore" type="button">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Scan More
+                </button>
             </div>
         </div>
         <div class="results-grid" id="resultsGrid"></div>
@@ -64,14 +107,14 @@
 </main>
 
 <footer class="footer">
-    <p>RScan Document Scanner &mdash; on-device OpenCV pipeline, no cloud</p>
+    <p>RScan Document Scanner &mdash; on-device OpenCV pipeline, no cloud · <a href="/">Scan images instead</a></p>
 </footer>
 
 <!-- ── Page-Limit Modal (same as index page) ── -->
 <div class="modal-backdrop hidden" id="pageLimitBackdrop" role="dialog" aria-modal="true" aria-labelledby="pageLimitTitle">
     <div class="modal">
         <div class="modal-header">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
                 <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
                 <polyline points="14 2 14 8 20 8"/>
                 <line x1="9" y1="13" x2="15" y2="13"/>
@@ -81,17 +124,17 @@
         </div>
         <p class="modal-subtitle">Choose how many pages from your PDF you want to process.</p>
         <div class="modal-options" id="pageLimitOptions">
-            <button class="page-opt-btn" data-limit="10">10 pages</button>
-            <button class="page-opt-btn" data-limit="20">20 pages</button>
-            <button class="page-opt-btn" data-limit="30">30 pages</button>
-            <button class="page-opt-btn" data-limit="40">40 pages</button>
-            <button class="page-opt-btn" data-limit="50">50 pages</button>
-            <button class="page-opt-btn page-opt-all" data-limit="all">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2z"/><path d="M8 12h8M12 8v8"/></svg>
+            <button class="page-opt-btn" type="button" data-limit="10">10 pages</button>
+            <button class="page-opt-btn" type="button" data-limit="20">20 pages</button>
+            <button class="page-opt-btn" type="button" data-limit="30">30 pages</button>
+            <button class="page-opt-btn" type="button" data-limit="40">40 pages</button>
+            <button class="page-opt-btn" type="button" data-limit="50">50 pages</button>
+            <button class="page-opt-btn page-opt-all" type="button" data-limit="all">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2z"/><path d="M8 12h8M12 8v8"/></svg>
                 All Pages
             </button>
         </div>
-        <button class="btn btn-outline modal-cancel" id="pageLimitCancel">Cancel</button>
+        <button class="btn btn-outline modal-cancel" id="pageLimitCancel" type="button">Cancel</button>
     </div>
 </div>
 
