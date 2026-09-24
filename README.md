@@ -6,8 +6,11 @@
 [![OpenCV](https://img.shields.io/badge/OpenCV-4.8-%235C3EE8.svg)](https://opencv.org/)
 [![CI](https://github.com/minhazexo/cam-clone/actions/workflows/ci.yml/badge.svg)](https://github.com/minhazexo/cam-clone/actions/workflows/ci.yml)
 [![Vercel](https://img.shields.io/badge/vercel-ready-black.svg)](https://vercel.com/new/clone?repository-url=https://github.com/minhazexo/cam-clone)
+[![Live Demo](https://img.shields.io/badge/live-camscannerclone.vercel.app-0A0A0A?logo=vercel&logoColor=white)](https://camscannerclone.vercel.app)
 
 A CamScanner-style document scanner for the web. Turn phone photos and PDFs into clean, flat, high-contrast scans with uniform A4 pages — on the server **or fully on-device** (no size limits, no uploads).
+
+**🚀 Live demo: [camscannerclone.vercel.app](https://camscannerclone.vercel.app)** · [On-device PDF scan](https://camscannerclone.vercel.app/scan-pdf) · [Health](https://camscannerclone.vercel.app/api/health)
 
 [![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https://github.com/minhazexo/cam-clone)
 
