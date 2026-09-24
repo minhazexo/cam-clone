@@ -4,7 +4,7 @@
 # Headless OpenCV is intentional: Vercel/containers have no libGL, and this
 # repo never calls imshow/waitKey, so opencv-python-headless is a drop-in.
 
-flask>=3.0
+flask>=3.1.3
 opencv-python-headless>=4.8
 numpy>=1.24
 pymupdf>=1.23
