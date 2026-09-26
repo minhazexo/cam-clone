@@ -7,5 +7,5 @@
 flask>=3.0
 opencv-python-headless>=4.8
 numpy>=1.24
-pymupdf>=1.23
+pymupdf>=1.28.2
 pillow>=10
