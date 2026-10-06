@@ -7,6 +7,37 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — on-device scan crash on extreme-aspect pages
+
+Scanning a long, narrow PDF page (a 400×8000 receipt or plot) on `/scan-pdf`
+failed with `Error: Scan worker failed: 372817952` — a raw C++ exception
+pointer leaking out of OpenCV.js. Re-framing widens such content to the
+reference aspect, turning 3.2 MP into a **54 MP canvas** whose downstream
+stages exceeded the worker's 1 GB WASM heap (`bad_alloc`); Python survived
+only because numpy uses system RAM.
+
+- **Canvas pixel budget (both sides of the parity contract).**
+  `REF_CANVAS_MAX_PIXELS` (16 MP) in `rscan/scanner/constants.py` mirrored by
+  `scan-geometry.js`: over the budget the canvas *and* its pasted content are
+  scaled down uniformly, so margins, aspect and the final A4-embedded output
+  are unchanged — only redundant white pixels go away. The receipt now
+  produces a 15,997,791 px canvas and identical dims on both sides
+  (reframe 3363×4757, full 3128×4424).
+- **Render pixel budget (frontend).** `PDF_PROFILES.full.maxPagePixels`
+  (12 MP) joins the existing width caps, so a page that is tall in absolute
+  pixels can no longer render past what the worker's heap can hold.
+- **Engine-fault recovery.** An `error` that is a bare number is an uncaught
+  C++ exception that leaves the worker's WASM module poisoned; the scan now
+  tags it (`engineFault`), discards the pool, re-warms one worker smaller and
+  re-runs the batch — degrading to a single worker before failing with an
+  actionable message instead of a cryptic pointer.
+- **Regression coverage.** New `tests/parity/parity_receipt.js` (dims anchor
+  `tests/fixtures/receipt_dims.json`, generator
+  `scripts/gen_receipt_fixture.py`, input mirrored from
+  `tests/unit/test_scanner.py:make_receipt`) plus `ReframeBudgetTest` in the
+  Python units — the previously crashing input is exercised on both sides
+  without committing multi-MB pixel dumps.
+
 ### Changed — parallel PDF page scanning
 
 Selecting a PDF no longer scans strictly one page at a time:

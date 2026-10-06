@@ -76,6 +76,12 @@ export const PDF_PROFILES = {
     renderDpi: 200,
     capWidthLarge: 2500,
     capWidthSmall: 1800,
+    /**
+     * Total rendered pixels per page (width x height). Width caps alone let
+     * a long receipt or plot render to 30M+ pixels, whose working set exceeds
+     * the scan worker's 1 GB WASM heap before the canvas cap can help.
+     */
+    maxPagePixels: 12000000,
     smallScreenMaxWidth: 768,
     /** `null` scale means "use renderDpi"; fallback uses a plain 2x cap. */
     fallbackScaleCap: null,
@@ -93,6 +99,7 @@ export const PDF_PROFILES = {
     renderDpi: null,
     capWidthLarge: null,
     capWidthSmall: null,
+    maxPagePixels: null,
     smallScreenMaxWidth: 0,
     fallbackScaleCap: 2.0,
     fallbackFitWidth: 1500,

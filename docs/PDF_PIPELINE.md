@@ -61,7 +61,10 @@ closes. Every log line in the worker carries the `job_id`.
 File (PDF)
   → pdf-engine.js      wait for window.pdfjsLib / window.PDFLib (runtime.js)
   → pdf-renderer.js    page.getViewport({scale}) → canvas   (whole chunk, concurrent)
-         scale = min(200/72, capWidth/pageWidth)      cap 2500 (desktop) / 1800 (phone)
+         scale = min(200/72, capWidth/pageWidth, sqrt(maxPagePixels/(w·h)))
+                                 caps: 2500 px wide (desktop) / 1800 (phone),
+                                 12 MP total — a long receipt/plot must not
+                                 render more pixels than the WASM heap holds
   → pdf-processing.js  canvas → worker protocol → enhanced canvas   (one worker/page)
   → pdf-export.js      optional frame → JPEG → pdf-lib embedJpg      (document order)
          pageMode "a4"     → uniform A4 page, aspect-fit, centred
@@ -98,6 +101,21 @@ workers are warmed lazily (`engine-loader.js: acquirePool`) and kept alive for
 the next scan, so the ~10 MB WASM compile is paid once per worker per page
 load. If a spare worker cannot warm up, the scan simply runs with a smaller
 pool.
+
+**Canvas pixel budget.** Re-framing widens content whose aspect ratio differs
+far from the reference (a 400×8000 receipt becomes a 54 MP white canvas at
+native content resolution). Above `REF_CANVAS_MAX_PIXELS` (16 MP,
+`rscan/scanner/constants.py` mirrored in `scan-geometry.js`) the canvas *and*
+its pasted content scale down uniformly — margins, aspect and the final
+A4-embedded output are unchanged, only redundant white pixels are dropped —
+so the worker's 1 GB WASM heap always fits. Without the budget this input
+raised a `bad_alloc` that surfaced as `Scan worker failed: <raw pointer>`.
+
+**Engine-fault recovery.** If a worker still replies with an engine fault
+(a raw C++ exception pointer: OpenCV assertion or out-of-memory), its WASM
+module is poisoned; the scan discards the whole pool, warms a fresh pool one
+worker smaller and re-runs that batch, degrading down to a single worker
+before failing with an actionable message (`on-device-pdf-scan.js`).
 
 Profiles (`static/js/core/constants.js: PDF_PROFILES`) keep the two local paths
 honest:

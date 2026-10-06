@@ -6,6 +6,8 @@ changes), NOT the algorithm's exact pixels. Exact pixels are the parity
 suite's job (tests/parity + tests/fixtures).
 """
 
+import json
+import os
 import unittest
 
 import cv2 as cv
@@ -17,6 +19,7 @@ from rscan.scanner.constants import (
     DEFAULT_BLACK_POINT2,
     DEFAULT_WHITE_POINT,
     REF_ASPECT_FALLBACK,
+    REF_CANVAS_MAX_PIXELS,
 )
 from rscan.scanner.geometry import (
     deskew,
@@ -26,6 +29,7 @@ from rscan.scanner.geometry import (
     warp_to_rectangle,
 )
 from rscan.scanner.pipeline import scan_photo_to_reference
+from rscan.scanner.postprocessing import reframe_like_reference
 
 
 def make_page(width=320, height=440, tilt_deg=0.0):
@@ -158,6 +162,57 @@ class ImageIoTest(unittest.TestCase):
     def test_scan_photo_to_reference_rejects_empty_input(self):
         with self.assertRaises(ValueError):
             scan_photo_to_reference(None)
+
+
+def make_receipt(width=400, height=8000):
+    """Canonical long-receipt page (the canvas-budget regression input).
+
+    Integer-only content so ``tests/parity/parity_receipt.js`` can mirror it
+    byte-for-byte without committing multi-MB pixel fixtures. Keep the two
+    generators identical.
+    """
+    page = np.full((height, width, 3), 235, np.uint8)
+    for y in range(100, height - 100, 52):
+        page[y:y + 14, 60:340] = 40
+    page[60:64, 20:380] = (235, 130, 235)
+    return page
+
+
+RECEIPT_DIMS_JSON = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+    "fixtures", "receipt_dims.json")
+
+
+class ReframeBudgetTest(unittest.TestCase):
+    """A long receipt must not explode the re-framed canvas (browser WASM cap)."""
+
+    def test_receipt_canvas_stays_within_the_pixel_budget(self):
+        out = reframe_like_reference(make_receipt(), ref_aspect=REF_ASPECT_FALLBACK)
+        h, w = out.shape[:2]
+        self.assertLessEqual(h * w, REF_CANVAS_MAX_PIXELS,
+                             "extreme-aspect canvas must be capped (parity: JS too)")
+        # The uniform downscale keeps the reference aspect.
+        self.assertAlmostEqual(w / h, REF_ASPECT_FALLBACK, delta=0.01)
+
+    def test_receipt_dims_match_the_parity_anchor(self):
+        with open(RECEIPT_DIMS_JSON, "r", encoding="utf-8") as fh:
+            anchor = json.load(fh)
+        receipt = make_receipt(anchor["w"], anchor["h"])
+        re = reframe_like_reference(receipt, ref_aspect=REF_ASPECT_FALLBACK)
+        self.assertEqual([re.shape[1], re.shape[0]], anchor["reframe"])
+        full = scan_photo_to_reference(receipt, output_scale=1.0)
+        self.assertEqual([full.shape[1], full.shape[0]], anchor["full"])
+
+    def test_normal_page_output_stays_small(self):
+        out = reframe_like_reference(make_page(800, 1100),
+                                     ref_aspect=REF_ASPECT_FALLBACK)
+        h, w = out.shape[:2]
+        self.assertLessEqual(h * w, REF_CANVAS_MAX_PIXELS)
+        # Reference-ish portrait shape, no degenerate canvas.
+        self.assertGreater(w, 400)
+        self.assertGreater(h, 400)
+        self.assertLess(w / h, 0.9)
+        self.assertGreater(w / h, 0.5)
 
 
 if __name__ == "__main__":

@@ -205,6 +205,35 @@ export function shutdownEngine() {
   pending = null;
 }
 
+/**
+ * Terminate workers and forget them, so the next acquire warms fresh ones.
+ *
+ * Used when a worker's WASM engine threw an uncaught C++ exception: the
+ * module is left in an undefined state (the glue's `__exception_last` is
+ * still set) and must not receive another page. Workers that are not in
+ * the pool (per-scan fallback workers) are simply terminated.
+ *
+ * @param {Worker[]} workers
+ */
+function discard(workers) {
+  for (const worker of workers || []) {
+    if (!worker) continue;
+    const index = spareWorkers.indexOf(worker);
+    if (index >= 0) spareWorkers.splice(index, 1);
+    if (worker === warmWorker) {
+      // `ensure()` short-circuits on `pending`: it must re-probe instead of
+      // handing back the terminated worker.
+      warmWorker = null;
+      pending = null;
+    }
+    try {
+      worker.terminate();
+    } catch (error) {
+      logger.debug("worker terminate failed", error);
+    }
+  }
+}
+
 /** Public engine facade, including the legacy `window.RScanEngine` API. */
 export const engine = {
   /** @returns {Promise<{source: string, worker: Worker}>} */
@@ -216,6 +245,8 @@ export const engine = {
    * @returns {Promise<{source: string, workers: Worker[]}>}
    */
   acquirePool: ensurePool,
+  /** Terminate workers and drop them from the warm pool (see `discard`). */
+  discard,
   /**
    * Legacy callback API: `RScanEngine.ready(onReady, onError)`.
    *
