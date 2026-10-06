@@ -114,11 +114,16 @@ synchronous variant (no progress).
 
 ```
 pdf-engine.js (pdf.js + pdf-lib ready)
-  → pdf-renderer.js  (page → canvas at profile DPI)
-  → pdf-processing.js(canvas → worker → enhanced canvas)
-  → pdf-export.js    (embed JPEG → A4 page, optional frame)
+  → pdf-renderer.js  (chunk of pages → canvas at profile DPI)
+  → pdf-processing.js(canvas → worker pool → enhanced canvas; 1 worker/page)
+  → pdf-export.js    (embed JPEG → A4 page, optional frame, in page order)
   → pdf-lib save()   → blob URL → /api/pdf-* never involved
 ```
+
+Pages are processed in chunks of `scanPoolSize(...)` (pool size) so N pages
+scan at once; the append step stays strictly ordered. Do not send two requests
+to one worker — each worker holds one in-flight message (`core/constants.js`,
+`planPageChunks`, `engine-loader.acquirePool`).
 
 ## 7. Scanner pipeline (server)
 

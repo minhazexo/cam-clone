@@ -112,3 +112,49 @@ export const A4_PAGE = {
 
 /** Frame stroke width as a fraction of the page's short side (matches server). */
 export const PAGE_BORDER_STROKE_RATIO = 0.003;
+
+/**
+ * On-device scan worker pool.
+ *
+ * The scan stage is ~90% of the per-page cost of a local PDF scan (measured
+ * server-side on an A4 page at 200 DPI: ~3.9 s scanning vs ~0.6 s encoding
+ * and ~0.02 s rendering), and it runs entirely inside a Web Worker. Running
+ * several workers therefore turns cores into scanned pages: N workers scan N
+ * pages at once, while pdf.js rendering and JPEG encoding keep going on the
+ * main thread.
+ *
+ * The caps exist because every worker owns a full copy of the ~10 MB
+ * OpenCV.js engine plus its heap — on a phone that is real memory, so small
+ * screens get fewer workers.
+ */
+export const SCAN_POOL = {
+  /** Hard cap on concurrently warm OpenCV.js workers. */
+  maxWorkers: 4,
+  /** Small screens: fewer workers, more headroom for render + encode. */
+  maxWorkersSmallScreen: 2,
+  /** Cores kept free for pdf.js rendering, JPEG encoding and the UI. */
+  reservedCores: 1,
+};
+
+/**
+ * How many scan workers a given local scan should run with.
+ *
+ * Pure policy over the constants above (unit-tested in
+ * `tests/js/helpers.test.js`); it never spawns anything itself.
+ *
+ * @param {{pageCount: number, hardwareConcurrency?: number,
+ *          smallScreen?: boolean, profile?: {useEngineLoader?: boolean}}} options
+ * @returns {number} 1 when parallelism cannot help, otherwise >= 1 workers
+ */
+export function scanPoolSize({ pageCount, hardwareConcurrency, smallScreen, profile }) {
+  // The home page's fallback profile uses a disposable light worker and must
+  // stay instant and unchanged — one worker, exactly as before.
+  if (!profile || !profile.useEngineLoader) return 1;
+  // A single page has nothing to overlap (and no reason to spawn engines).
+  if (!Number.isFinite(pageCount) || pageCount < 2) return 1;
+  const cores = Number.isFinite(hardwareConcurrency) && hardwareConcurrency > 0
+    ? hardwareConcurrency
+    : 2;
+  const cap = smallScreen ? SCAN_POOL.maxWorkersSmallScreen : SCAN_POOL.maxWorkers;
+  return Math.max(1, Math.min(pageCount, cap, cores - SCAN_POOL.reservedCores));
+}

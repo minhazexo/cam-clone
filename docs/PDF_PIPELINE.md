@@ -60,14 +60,35 @@ closes. Every log line in the worker carries the `job_id`.
 ```
 File (PDF)
   → pdf-engine.js      wait for window.pdfjsLib / window.PDFLib (runtime.js)
-  → pdf-renderer.js    page.getViewport({scale}) → canvas
+  → pdf-renderer.js    page.getViewport({scale}) → canvas   (whole chunk, concurrent)
          scale = min(200/72, capWidth/pageWidth)      cap 2500 (desktop) / 1800 (phone)
-  → pdf-processing.js  canvas → worker protocol → enhanced canvas
-  → pdf-export.js      optional frame → JPEG → pdf-lib embedJpg
+  → pdf-processing.js  canvas → worker protocol → enhanced canvas   (one worker/page)
+  → pdf-export.js      optional frame → JPEG → pdf-lib embedJpg      (document order)
          pageMode "a4"     → uniform A4 page, aspect-fit, centred
          pageMode "source" → the PDF's own page size (legacy fallback profile)
   → pdf-lib save()     → Blob → object URL (state.js owns revocation)
 ```
+
+### Parallel scanning (worker pool)
+
+Pages are processed in **chunks of N**, where N is the worker-pool size
+(`core/constants.js: scanPoolSize`, chunks built by
+`pdf-processing.js: planPageChunks`):
+
+1. render every page of the chunk concurrently (pdf.js rasterises off the
+   main thread);
+2. scan the chunk with **one OpenCV.js worker per page** — this is the
+   expensive stage, ~90 % of the per-page cost, so N workers means N pages
+   advancing at a time;
+3. encode and append those pages strictly in document order, releasing each
+   canvas as soon as it is embedded (so only one chunk of full-size canvases
+   is ever alive).
+
+`N = min(pages, 4, hardwareConcurrency - 1)`, capped at 2 on small screens,
+and always 1 for a single page and for the `fallback` profile. Extra workers
+are warmed lazily (`engine-loader.js: acquirePool`) and kept alive for the
+next scan, so the ~10 MB WASM compile is paid once per worker per page load.
+If a spare worker cannot warm up, the scan simply runs with a smaller pool.
 
 Profiles (`static/js/core/constants.js: PDF_PROFILES`) keep the two local paths
 honest:
@@ -75,7 +96,7 @@ honest:
 | | `full` (`/scan-pdf`) | `fallback` (home page last resort) |
 |---|---|---|
 | Render | 200 DPI, width-capped | 2× capped at 1500 px wide |
-| Worker | warm engine (v2, else v1) | v1 light worker |
+| Worker | warm engine **pool** (v2, else v1) | v1 light worker (single) |
 | Output pages | uniform A4 + frame | the PDF's own page size |
 | JPEG quality | 0.80 | 0.94 |
 

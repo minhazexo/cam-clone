@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed — parallel PDF page scanning
+
+Selecting a PDF no longer scans strictly one page at a time:
+
+- **Worker pool (on-device).** `/scan-pdf` scans
+  `min(pages, 4, hardwareConcurrency - 1)` pages concurrently — 2 on small
+  screens — using lazily-warmed spare OpenCV.js workers
+  (`engine-loader.acquirePool`). A single-page PDF and the home page's
+  `fallback` profile keep the exact previous single-worker behaviour, and a
+  spare worker that fails to warm up simply shrinks the pool.
+- **Chunked pipeline.** Each chunk is rendered together (pdf.js works off the
+  main thread), scanned with one worker per page, then appended strictly in
+  document order with each canvas released as soon as it is embedded — the
+  PDF's page order and layout are unchanged, memory stays bounded to one chunk.
+- **Non-blocking JPEG encode.** `canvas.toBlob` + `arrayBuffer()` replaces the
+  synchronous `toDataURL` + base64-decode loop (same encoder, same quality),
+  and the results-grid thumbnail is only encoded when it will be kept.
+- **Server sync endpoint parallelised.** `POST /api/scan-pdf` now shares
+  `scan_pages_parallel` with the background job. The worker bound is
+  affinity-aware (`sched_getaffinity`, falling back to `os.cpu_count()`), so a
+  container restricted to fewer CPUs no longer builds a pool it cannot run.
+
+Per-page work is untouched: no scanner constant, operation order or worker
+message changed, and `bun run parity` passes at the original gates.
+
 ### Changed — architecture refactor (behaviour-preserving)
 
 The product behaves the same; the code is organised into layers with explicit

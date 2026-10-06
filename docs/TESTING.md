@@ -70,7 +70,8 @@ absent, which is also how CI runs.
 ## 3. Frontend tests (`bun run test:js`)
 
 * `tests/js/helpers.test.js` — `safeFilename`, `formatBytes`, error messages,
-  selection signatures, endpoint builders, PDF profile invariants, local limits.
+  selection signatures, endpoint builders, PDF profile invariants, local limits,
+  plus the parallel-scan policy (`scanPoolSize`, `planPageChunks`).
 * `tests/js/assets.test.js` — every `/static/...` path mentioned in
   `core/constants.js` and the templates exists on disk; every relative ES-module
   import resolves; the worker's `importScripts` target exists.
@@ -123,8 +124,20 @@ statistics (photometry, PSNR/SSIM/MAD, tilt, margins). It exits non-zero on
 regression and needs those assets, so it is a workstation tool, not a CI gate.
 The historical path `RScan/Python/scan/quality_gate.py` still works.
 
+## Benchmark (local only)
+
+`python scripts/bench_pdf_scan.py` A/B's the server PDF scan on one machine:
+serial (forced single worker) versus the configured pool. It prints the CPU
+budget it detected, the pool it chose and seconds per page, so it can be run
+before and after a change to page scheduling.
+
+On a single-CPU host both runs are equal **by design** — the pool is capped at
+the CPUs the process may use instead of over-subscribing. Run it on a
+multi-core machine to see the scaling; the scan stage is ~85 % of the per-page
+cost, and it is the stage `scan_pages_parallel` fans out.
+
 ## CI
 
-`.github/workflows/ci.yml` runs four jobs: frontend asset check + parity,
-JS tests, Python unit + integration tests, and a Python compile/import smoke
+`.github/workflows/ci.yml` runs three jobs: frontend assets + JS tests, the
+parity harnesses, and Python unit/integration tests + a compile/import smoke
 test. Keep it fast — the whole suite is under a couple of minutes.

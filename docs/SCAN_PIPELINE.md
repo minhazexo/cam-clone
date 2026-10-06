@@ -106,8 +106,13 @@ Rules that keep it correct and fast:
   Mat per page crashes the tab on long PDFs.
 * The worker replies with an explicit `error` message instead of throwing, so
   the UI can show a message instead of dying silently.
-* The warm worker is reused for every page of every scan
-  (`engine-loader.js`); only the fallback worker is terminated per scan.
+* Warm workers are reused for every page of every scan (`engine-loader.js`);
+  only the fallback worker is terminated per scan. For local PDF scans the
+  loader can hand out a **pool** of workers (see `docs/PDF_PIPELINE.md` →
+  *Parallel scanning*): the protocol is unchanged, there is simply more than
+  one peer. Each worker handles **one in-flight request at a time** — the main
+  thread owns `onmessage` per worker, so a second request is only ever sent to
+  an idle worker (one per chunk page).
 * Node parity harnesses load the same file through `require()`
   (`module.exports = { processPage, processImage, … }`), so the worker cannot
   use browser-only APIs at module scope.
@@ -120,7 +125,15 @@ engine-loader.ensure()
   │    └─ ready → hand the warm worker to the caller (never terminated)
   └─ on failure → new Worker(scan-worker.js); post a 4x4 dummy image
        └─ response → "fallback" source (lower quality; /scan-pdf waits for v2)
-shutdownEngine()  ← window `pagehide` on the on-device page
+
+engine-loader.ensurePool(size)          ← parallel local PDF scans only
+  ├─ ensure() as above (worker #1)
+  ├─ spawn + probe up to size-1 spare workers (lazily, serialised)
+  │    ├─ ready → kept warm for later scans
+  │    └─ failure → log and continue with a smaller pool (never fatal)
+  └─ returns {source, workers[]} — chunk size = workers.length
+
+shutdownEngine()  ← window `pagehide` on the on-device page (all workers)
 ```
 
 ## Node parity harnesses
