@@ -10,7 +10,6 @@
  * and revocation in one place is what makes that safe.
  */
 
-import { LIMITS } from "./constants.js";
 import { logger } from "./logger.js";
 
 const state = {
@@ -103,16 +102,6 @@ export function resetResults() {
   state.scannedPages = [];
   state.scannedPdfName = null;
   state.lastSelectionSignature = "";
-}
-
-/**
- * Should another page thumbnail be kept?
- *
- * @param {number} currentCount
- * @returns {boolean}
- */
-export function canKeepThumbnail(currentCount) {
-  return currentCount < LIMITS.maxThumbnails;
 }
 
 export const session = state;

@@ -9,9 +9,9 @@
  *  - `source` : legacy page-per-image at the PDF's own page size.
  */
 
-import { A4_PAGE, PAGE_BORDER_STROKE_RATIO } from "../../core/constants.js";
+import { A4_PAGE, PAGE_BORDER_STROKE_RATIO, THUMBNAIL_MAX_SIDE } from "../../core/constants.js";
 import { ensurePdfEngine } from "./pdf-engine.js";
-import { canvasToJpegBytes, canvasToDataUrl, drawPageBorder } from "./pdf-renderer.js";
+import { canvasToJpegBytes, canvasToDataUrl, canvasThumbnail, drawPageBorder } from "./pdf-renderer.js";
 
 /**
  * Create an empty output document.
@@ -29,11 +29,10 @@ export async function createOutputDocument() {
  * @param {object} output pdf-lib document
  * @param {HTMLCanvasElement} canvas scanned page (already enhanced)
  * @param {{pageMode: string, drawBorder: boolean, jpegQuality: number,
- *          sourcePageSize?: {width: number, height: number},
- *          preview?: boolean}} options `preview: false` skips the second JPEG
- *          encode used only for the results grid
- * @returns {Promise<{dataUrl: string|null, width: number, height: number}>}
- *          preview info (`dataUrl` is null when the preview was skipped)
+ *          sourcePageSize?: {width: number, height: number}}} options
+ * @returns {Promise<{dataUrl: string, width: number, height: number}>}
+ *          a downscaled results-grid thumbnail (`width`/`height` are the
+ *          FULL page dimensions, not the thumbnail's)
  */
 export async function appendPage(output, canvas, options) {
   if (options.drawBorder) drawPageBorder(canvas, PAGE_BORDER_STROKE_RATIO);
@@ -60,12 +59,17 @@ export async function appendPage(output, canvas, options) {
     height: canvas.height * fit,
   });
 
+  // Every scanned page keeps a results-grid thumbnail, so it is downscaled
+  // first: full-size data URLs for a 250-page document would hold hundreds
+  // of MB. Encoded from a small canvas this is also cheaper than the embed
+  // encode above.
+  const thumb = canvasThumbnail(canvas, THUMBNAIL_MAX_SIDE);
+  const dataUrl = canvasToDataUrl(thumb, options.jpegQuality);
+  thumb.width = 0;
+  thumb.height = 0;
+
   return {
-    // The thumbnail is a second full JPEG encode — only pay for it when the
-    // caller is actually going to keep it (results grid is capped).
-    dataUrl: options.preview === false
-      ? null
-      : canvasToDataUrl(canvas, options.jpegQuality),
+    dataUrl,
     width: canvas.width,
     height: canvas.height,
   };

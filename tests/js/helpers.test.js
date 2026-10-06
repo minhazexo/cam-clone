@@ -13,7 +13,10 @@ import { describe, expect, test } from "bun:test";
 import { formatBytes, safeFilename } from "../../static/js/core/dom.js";
 import { AppError, toUserMessage } from "../../static/js/core/errors.js";
 import { selectionSignature } from "../../static/js/core/state.js";
-import { PDF_PROFILES, ENDPOINTS, LIMITS, SCAN_POOL, scanPoolPlan, usableCores } from "../../static/js/core/constants.js";
+import {
+  PDF_PROFILES, ENDPOINTS, LIMITS, SCAN_POOL, THUMBNAIL_MAX_SIDE,
+  scanPoolPlan, usableCores,
+} from "../../static/js/core/constants.js";
 import { planPageChunks } from "../../static/js/features/pdf-scan/pdf-processing.js";
 
 describe("safeFilename", () => {
@@ -101,6 +104,14 @@ describe("constants contract", () => {
   test("local limits match the documented 250 MB / 250 pages", () => {
     expect(LIMITS.maxLocalPdfBytes).toBe(250 * 1024 * 1024);
     expect(LIMITS.maxLocalPdfPages).toBe(250);
+  });
+
+  test("every scanned page keeps a small thumbnail (the grid shows all pages)", () => {
+    // The old 12-thumbnail count cap is gone: previews are downscaled
+    // instead, so a full-length document cannot blow up memory while the
+    // results grid still shows every page.
+    expect(LIMITS.maxThumbnails).toBeUndefined();
+    expect(THUMBNAIL_MAX_SIDE).toBe(960);
   });
 });
 
