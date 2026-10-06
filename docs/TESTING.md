@@ -71,7 +71,8 @@ absent, which is also how CI runs.
 
 * `tests/js/helpers.test.js` — `safeFilename`, `formatBytes`, error messages,
   selection signatures, endpoint builders, PDF profile invariants, local limits,
-  plus the parallel-scan policy (`scanPoolSize`, `planPageChunks`).
+  plus the parallel-scan policy (`scanPoolPlan`, `usableCores`,
+  `planPageChunks`).
 * `tests/js/assets.test.js` — every `/static/...` path mentioned in
   `core/constants.js` and the templates exists on disk; every relative ES-module
   import resolves; the worker's `importScripts` target exists.

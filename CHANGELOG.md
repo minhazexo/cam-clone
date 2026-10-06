@@ -12,15 +12,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Selecting a PDF no longer scans strictly one page at a time:
 
 - **Worker pool (on-device).** `/scan-pdf` scans
-  `min(pages, 4, hardwareConcurrency - 1)` pages concurrently — 2 on small
-  screens — using lazily-warmed spare OpenCV.js workers
-  (`engine-loader.acquirePool`). A single-page PDF and the home page's
-  `fallback` profile keep the exact previous single-worker behaviour, and a
-  spare worker that fails to warm up simply shrinks the pool.
-- **Chunked pipeline.** Each chunk is rendered together (pdf.js works off the
-  main thread), scanned with one worker per page, then appended strictly in
-  document order with each canvas released as soon as it is embedded — the
-  PDF's page order and layout are unchanged, memory stays bounded to one chunk.
+  `min(pages, cap, usableCores(hardwareConcurrency))` pages concurrently —
+  `cap` 6 on desktop and 3 on small screens; below 8 cores every core scans
+  (`usableCores` reserves one core only when there is a spare to give) — using
+  lazily-warmed spare OpenCV.js workers (`engine-loader.acquirePool`). A
+  single-page PDF, a single CPU core and the home page's `fallback` profile
+  keep the previous single-worker behaviour, and a spare worker that fails to
+  warm up simply shrinks the pool.
+- **The pool reason is shown in the UI.** `scanPoolPlan` returns the chosen
+  size *and* the constraint that bounded it (`only N pages`, `N cores`,
+  `memory cap`, `small screen`, `single CPU core`, …); the scan panel logs
+  e.g. `Engine worker ready (v2-full) — 6 pages at once (memory cap)` and
+  `Page N of X scanned` per page, so a smaller-than-expected pool is never a
+  mystery.
+- **Chunked pipeline with overlap.** Each chunk is rendered together (pdf.js
+  works off the main thread), scanned with one worker per page, then appended
+  strictly in document order with each canvas released as soon as it is
+  embedded — while the *next* chunk's render+scan already runs on the pool
+  (the previous chunk's scan completes before the next is sent, so one
+  in-flight message per worker still holds). The PDF's page order and layout
+  are unchanged, and memory stays bounded to two chunks of canvases.
 - **Non-blocking JPEG encode.** `canvas.toBlob` + `arrayBuffer()` replaces the
   synchronous `toDataURL` + base64-decode loop (same encoder, same quality),
   and the results-grid thumbnail is only encoded when it will be kept.

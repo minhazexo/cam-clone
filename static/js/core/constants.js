@@ -124,37 +124,72 @@ export const PAGE_BORDER_STROKE_RATIO = 0.003;
  * main thread.
  *
  * The caps exist because every worker owns a full copy of the ~10 MB
- * OpenCV.js engine plus its heap — on a phone that is real memory, so small
- * screens get fewer workers.
+ * OpenCV.js engine plus the intermediate Mats of one A4 page, so the cap is a
+ * memory guard rather than a CPU one: small screens get fewer workers, and
+ * one core is only kept back for rendering/encoding when the machine has a
+ * spare one to give (below 8 cores every core scans).
  */
 export const SCAN_POOL = {
-  /** Hard cap on concurrently warm OpenCV.js workers. */
-  maxWorkers: 4,
+  /** Hard cap on concurrently warm OpenCV.js workers (memory guard). */
+  maxWorkers: 6,
   /** Small screens: fewer workers, more headroom for render + encode. */
-  maxWorkersSmallScreen: 2,
-  /** Cores kept free for pdf.js rendering, JPEG encoding and the UI. */
+  maxWorkersSmallScreen: 3,
+  /** Cores kept free for pdf.js rendering, JPEG encoding and the UI … */
   reservedCores: 1,
+  /** … but only from this many cores upwards (see `usableCores`). */
+  spareCoreThreshold: 8,
+  /** Used when the browser hides `navigator.hardwareConcurrency`. */
+  fallbackCores: 4,
 };
 
 /**
- * How many scan workers a given local scan should run with.
+ * Cores the scan stage may use: keep one back for render/encode/UI only when
+ * there is a spare (on a 4-core phone all four should be scanning).
  *
- * Pure policy over the constants above (unit-tested in
- * `tests/js/helpers.test.js`); it never spawns anything itself.
+ * @param {number} cores
+ * @returns {number}
+ */
+export function usableCores(cores) {
+  return cores >= SCAN_POOL.spareCoreThreshold
+    ? Math.max(1, cores - SCAN_POOL.reservedCores)
+    : Math.max(1, cores);
+}
+
+/**
+ * Decide how many scan workers a local scan should run with, and *why* — the
+ * reason is surfaced in the UI so "only N pages at once" is never a mystery.
+ *
+ * Pure policy (unit-tested in `tests/js/helpers.test.js`); spawns nothing.
  *
  * @param {{pageCount: number, hardwareConcurrency?: number,
  *          smallScreen?: boolean, profile?: {useEngineLoader?: boolean}}} options
- * @returns {number} 1 when parallelism cannot help, otherwise >= 1 workers
+ * @returns {{workers: number, reason: string}}
  */
-export function scanPoolSize({ pageCount, hardwareConcurrency, smallScreen, profile }) {
+export function scanPoolPlan({ pageCount, hardwareConcurrency, smallScreen, profile }) {
   // The home page's fallback profile uses a disposable light worker and must
   // stay instant and unchanged — one worker, exactly as before.
-  if (!profile || !profile.useEngineLoader) return 1;
+  if (!profile || !profile.useEngineLoader) {
+    return { workers: 1, reason: "fallback profile uses a single light worker" };
+  }
   // A single page has nothing to overlap (and no reason to spawn engines).
-  if (!Number.isFinite(pageCount) || pageCount < 2) return 1;
+  if (!Number.isFinite(pageCount) || pageCount < 2) {
+    return { workers: 1, reason: "only one page to scan" };
+  }
+
   const cores = Number.isFinite(hardwareConcurrency) && hardwareConcurrency > 0
     ? hardwareConcurrency
-    : 2;
+    : SCAN_POOL.fallbackCores;
+  const usable = usableCores(cores);
   const cap = smallScreen ? SCAN_POOL.maxWorkersSmallScreen : SCAN_POOL.maxWorkers;
-  return Math.max(1, Math.min(pageCount, cap, cores - SCAN_POOL.reservedCores));
+  const workers = Math.max(1, Math.min(pageCount, cap, usable));
+
+  // Name the constraint that actually bound the pool (most restrictive first).
+  let reason;
+  if (workers >= pageCount) reason = `only ${pageCount} page${pageCount === 1 ? "" : "s"}`;
+  else if (workers === usable) reason = `${usable} core${usable === 1 ? "" : "s"}`;
+  else if (workers === cap) reason = smallScreen ? "small screen" : "memory cap";
+  else reason = "unknown";
+  if (workers === 1 && usable === 1) reason = "single CPU core";
+
+  return { workers, reason };
 }

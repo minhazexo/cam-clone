@@ -13,7 +13,7 @@ import { describe, expect, test } from "bun:test";
 import { formatBytes, safeFilename } from "../../static/js/core/dom.js";
 import { AppError, toUserMessage } from "../../static/js/core/errors.js";
 import { selectionSignature } from "../../static/js/core/state.js";
-import { PDF_PROFILES, ENDPOINTS, LIMITS, SCAN_POOL, scanPoolSize } from "../../static/js/core/constants.js";
+import { PDF_PROFILES, ENDPOINTS, LIMITS, SCAN_POOL, scanPoolPlan, usableCores } from "../../static/js/core/constants.js";
 import { planPageChunks } from "../../static/js/features/pdf-scan/pdf-processing.js";
 
 describe("safeFilename", () => {
@@ -99,39 +99,66 @@ describe("constants contract", () => {
   });
 });
 
-describe("scanPoolSize", () => {
+describe("scanPoolPlan", () => {
   const full = PDF_PROFILES.full;
   const fallback = PDF_PROFILES.fallback;
+  const plan = (overrides) => scanPoolPlan({
+    pageCount: 40, hardwareConcurrency: 8, profile: full, ...overrides,
+  });
 
   test("the fallback profile stays single-worker (legacy behaviour)", () => {
-    expect(scanPoolSize({ pageCount: 40, hardwareConcurrency: 16, profile: fallback })).toBe(1);
+    expect(plan({ profile: fallback })).toEqual({
+      workers: 1,
+      reason: "fallback profile uses a single light worker",
+    });
   });
 
-  test("a single page never spawns extra engines", () => {
-    expect(scanPoolSize({ pageCount: 1, hardwareConcurrency: 16, profile: full })).toBe(1);
-    expect(scanPoolSize({ pageCount: 0, hardwareConcurrency: 16, profile: full })).toBe(1);
-    expect(scanPoolSize({ pageCount: NaN, hardwareConcurrency: 16, profile: full })).toBe(1);
+  test("a single page never spawns extra engines, and says so", () => {
+    expect(plan({ pageCount: 1 })).toEqual({ workers: 1, reason: "only one page to scan" });
+    expect(plan({ pageCount: 0 }).workers).toBe(1);
+    expect(plan({ pageCount: NaN }).workers).toBe(1);
   });
 
-  test("scales with cores, minus one reserved for render/encode/UI", () => {
-    expect(scanPoolSize({ pageCount: 40, hardwareConcurrency: 8, profile: full })).toBe(
-      Math.min(SCAN_POOL.maxWorkers, 8 - SCAN_POOL.reservedCores));
-    // Two cores -> one worker for the scan stage, one kept for the UI.
-    expect(scanPoolSize({ pageCount: 40, hardwareConcurrency: 2, profile: full })).toBe(1);
+  test("every core scans below the spare-core threshold", () => {
+    expect(usableCores(1)).toBe(1);
+    expect(usableCores(3)).toBe(3);
+    expect(usableCores(4)).toBe(4);
+    expect(usableCores(SCAN_POOL.spareCoreThreshold)).toBe(
+      SCAN_POOL.spareCoreThreshold - SCAN_POOL.reservedCores);
+    // A 4-core machine gets four workers, not three: there is no spare core.
+    expect(plan({ hardwareConcurrency: 4 }).workers)
+      .toBe(Math.min(SCAN_POOL.maxWorkers, usableCores(4)));
+    expect(plan({ hardwareConcurrency: 4 }).reason).toBe("4 cores");
   });
 
-  test("never asks for more workers than there are pages", () => {
-    expect(scanPoolSize({ pageCount: 3, hardwareConcurrency: 16, profile: full })).toBe(3);
+  test("big machines are held by the memory cap", () => {
+    const p = plan({ hardwareConcurrency: 32 });
+    expect(p.workers).toBe(SCAN_POOL.maxWorkers);
+    expect(p.reason).toBe("memory cap");
   });
 
-  test("small screens get a smaller pool", () => {
-    expect(scanPoolSize({ pageCount: 40, hardwareConcurrency: 8, smallScreen: true, profile: full }))
-      .toBe(SCAN_POOL.maxWorkersSmallScreen);
+  test("never asks for more workers than there are pages (the 'why only 2?' case)", () => {
+    const p = plan({ pageCount: 2, hardwareConcurrency: 16 });
+    expect(p.workers).toBe(2);
+    expect(p.reason).toBe("only 2 pages");
+    expect(plan({ pageCount: 3, hardwareConcurrency: 16 }).workers).toBe(3);
+  });
+
+  test("small screens get a smaller pool, labelled as such", () => {
+    const p = plan({ pageCount: 40, hardwareConcurrency: 16, smallScreen: true });
+    expect(p.workers).toBe(SCAN_POOL.maxWorkersSmallScreen);
+    expect(p.reason).toBe("small screen");
     expect(SCAN_POOL.maxWorkersSmallScreen).toBeLessThan(SCAN_POOL.maxWorkers);
   });
 
-  test("an unknown core count falls back to a conservative pool", () => {
-    expect(scanPoolSize({ pageCount: 40, hardwareConcurrency: undefined, profile: full })).toBe(1);
+  test("an unknown core count assumes a quad core instead of going single", () => {
+    expect(SCAN_POOL.fallbackCores).toBe(4);
+    expect(plan({ hardwareConcurrency: undefined }).workers)
+      .toBe(Math.min(SCAN_POOL.maxWorkers, usableCores(SCAN_POOL.fallbackCores)));
+  });
+
+  test("a single-core machine is told exactly that", () => {
+    expect(plan({ hardwareConcurrency: 1 })).toEqual({ workers: 1, reason: "single CPU core" });
   });
 });
 

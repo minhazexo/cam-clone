@@ -72,7 +72,7 @@ File (PDF)
 ### Parallel scanning (worker pool)
 
 Pages are processed in **chunks of N**, where N is the worker-pool size
-(`core/constants.js: scanPoolSize`, chunks built by
+(`core/constants.js: scanPoolPlan`, chunks built by
 `pdf-processing.js: planPageChunks`):
 
 1. render every page of the chunk concurrently (pdf.js rasterises off the
@@ -82,13 +82,22 @@ Pages are processed in **chunks of N**, where N is the worker-pool size
    advancing at a time;
 3. encode and append those pages strictly in document order, releasing each
    canvas as soon as it is embedded (so only one chunk of full-size canvases
-   is ever alive).
+   is ever alive) — and while that append runs, the *next* chunk is already
+   rendering and scanning on the pool (the previous chunk's scan has fully
+   resolved before the next one is sent, so one in-flight message per worker
+   still holds).
 
-`N = min(pages, 4, hardwareConcurrency - 1)`, capped at 2 on small screens,
-and always 1 for a single page and for the `fallback` profile. Extra workers
-are warmed lazily (`engine-loader.js: acquirePool`) and kept alive for the
-next scan, so the ~10 MB WASM compile is paid once per worker per page load.
-If a spare worker cannot warm up, the scan simply runs with a smaller pool.
+`N = min(pages, cap, usableCores(hardwareConcurrency))`, where `cap` is 6 on
+desktop and 3 on small screens, and `usableCores` keeps one core back for
+rendering/encode/UI only at ≥ 8 cores (a 4-core phone scans on all 4). N is
+always 1 for a single page (reason `only one page`), a single CPU core
+(reason `single CPU core`) and the `fallback` profile. The chosen N and the
+reason that bounded it are shown in the scan panel (e.g. `6 pages at once
+(memory cap)`), so "why only N pages at once" is answered on screen. Extra
+workers are warmed lazily (`engine-loader.js: acquirePool`) and kept alive for
+the next scan, so the ~10 MB WASM compile is paid once per worker per page
+load. If a spare worker cannot warm up, the scan simply runs with a smaller
+pool.
 
 Profiles (`static/js/core/constants.js: PDF_PROFILES`) keep the two local paths
 honest:

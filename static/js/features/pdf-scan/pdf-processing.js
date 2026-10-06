@@ -23,7 +23,7 @@ import { engine } from "../../workers/engine-loader.js";
 /**
  * Get the scan workers to use for a scan profile.
  *
- * Pool policy lives in `core/constants.js` (`scanPoolSize`): 1 worker keeps
+ * Pool policy lives in `core/constants.js` (`scanPoolPlan`): 1 worker keeps
  * the legacy single-worker behaviour, N workers scan N pages at once.
  *
  * @param {object} profile one of `PDF_PROFILES`
