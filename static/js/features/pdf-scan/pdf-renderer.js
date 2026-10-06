@@ -72,13 +72,35 @@ export function drawPageBorder(canvas, strokeRatio) {
   context.restore();
 }
 
-/** Canvas -> JPEG bytes. */
+/**
+ * Canvas -> JPEG bytes (async, non-blocking).
+ *
+ * `toBlob` + `arrayBuffer` instead of `toDataURL` + a base64-decode loop:
+ * same encoder, same quality, same bytes — but the encode is no longer a
+ * synchronous multi-hundred-millisecond stall on the main thread, which is
+ * exactly where the UI used to freeze while a page was being written.
+ *
+ * @param {HTMLCanvasElement} canvas
+ * @param {number} quality 0..1 JPEG quality
+ * @returns {Promise<Uint8Array>}
+ */
 export function canvasToJpegBytes(canvas, quality) {
-  const dataUrl = canvas.toDataURL("image/jpeg", quality);
-  const binary = atob(dataUrl.split(",")[1]);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-  return bytes;
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          reject(new Error("JPEG encoding failed (toBlob returned null)"));
+          return;
+        }
+        blob.arrayBuffer().then(
+          (buffer) => resolve(new Uint8Array(buffer)),
+          (error) => reject(error),
+        );
+      },
+      "image/jpeg",
+      quality,
+    );
+  });
 }
 
 /** Canvas -> data URL (used for result previews). */

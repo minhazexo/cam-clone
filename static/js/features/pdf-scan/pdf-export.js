@@ -29,13 +29,16 @@ export async function createOutputDocument() {
  * @param {object} output pdf-lib document
  * @param {HTMLCanvasElement} canvas scanned page (already enhanced)
  * @param {{pageMode: string, drawBorder: boolean, jpegQuality: number,
- *          sourcePageSize?: {width: number, height: number}}} options
- * @returns {Promise<{dataUrl: string, width: number, height: number}>} preview info
+ *          sourcePageSize?: {width: number, height: number},
+ *          preview?: boolean}} options `preview: false` skips the second JPEG
+ *          encode used only for the results grid
+ * @returns {Promise<{dataUrl: string|null, width: number, height: number}>}
+ *          preview info (`dataUrl` is null when the preview was skipped)
  */
 export async function appendPage(output, canvas, options) {
   if (options.drawBorder) drawPageBorder(canvas, PAGE_BORDER_STROKE_RATIO);
 
-  const jpegBytes = canvasToJpegBytes(canvas, options.jpegQuality);
+  const jpegBytes = await canvasToJpegBytes(canvas, options.jpegQuality);
   const embedded = await output.embedJpg(jpegBytes);
 
   let pageSize;
@@ -58,7 +61,11 @@ export async function appendPage(output, canvas, options) {
   });
 
   return {
-    dataUrl: canvasToDataUrl(canvas, options.jpegQuality),
+    // The thumbnail is a second full JPEG encode — only pay for it when the
+    // caller is actually going to keep it (results grid is capped).
+    dataUrl: options.preview === false
+      ? null
+      : canvasToDataUrl(canvas, options.jpegQuality),
     width: canvas.width,
     height: canvas.height,
   };

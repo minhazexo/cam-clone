@@ -102,9 +102,12 @@ See `SCAN_PIPELINE.md` → "Worker protocol". From the frontend's perspective:
 * `workers/engine-loader.js` owns worker creation, the ping probe, the v1
   fallback, and the `window.RScanEngine` compatibility global.
 * `features/pdf-scan/pdf-processing.js` owns the message exchange and rejects
-  the promise on `{error}` or worker death; it never terminates the warm worker
+  the promise on `{error}` or worker death; it never terminates a warm worker
   (only per-scan fallback workers are released).
-* Workers are never created per page — one warm worker per page load.
+* Workers are never created per page: one warm worker per page load, plus
+  lazily-warmed spares for parallel local scans (one in-flight message per
+  worker, so each worker gets its own `onmessage`). Pool sizing lives in
+  `core/constants.js: scanPoolSize`; chunking in `planPageChunks`.
 
 ## PDF processing flow (both pages)
 
@@ -115,7 +118,8 @@ pdf-upload (zone/picker, ui/upload-zone.js)
        startPdfScan → followServerProgress → panel updates → result card
   ↘ on failure
     runOnDevicePdfScan (features/pdf-scan/on-device-pdf-scan.js)
-       openPdfDocument → per page: render → enhance → appendPage
+       openPdfDocument → per chunk of N pages (N = worker pool size):
+         render chunk → scan chunk (one worker per page) → append in order
        → saveOutputDocument → Blob → state.setLocalPdfBlob
        → ui/results.renderLocalPdfResult | renderLocalPageGrid
 ```

@@ -21,19 +21,47 @@ import { logger } from "../../core/logger.js";
 import { engine } from "../../workers/engine-loader.js";
 
 /**
- * Get the worker to use for a scan profile.
+ * Get the scan workers to use for a scan profile.
+ *
+ * Pool policy lives in `core/constants.js` (`scanPoolSize`): 1 worker keeps
+ * the legacy single-worker behaviour, N workers scan N pages at once.
  *
  * @param {object} profile one of `PDF_PROFILES`
- * @returns {Promise<{worker: Worker, source: string}>}
+ * @param {number} [size] how many workers the caller wants (>= 1)
+ * @returns {Promise<{workers: Worker[], source: string}>}
  */
-export async function acquireWorker(profile) {
+export async function acquireWorkers(profile, size = 1) {
   if (profile.useEngineLoader) {
-    const info = await engine.acquire();
-    return { worker: info.worker, source: info.source };
+    const info = await engine.acquirePool(size);
+    return { workers: info.workers, source: info.source };
   }
   // Fallback profile: a throwaway light worker, exactly as the legacy path did.
   logger.debug("creating fallback scan worker", ASSETS.scanWorkerFallback);
-  return { worker: new Worker(ASSETS.scanWorkerFallback), source: "fallback" };
+  return { workers: [new Worker(ASSETS.scanWorkerFallback)], source: "fallback" };
+}
+
+/**
+ * Split page numbers into ordered chunks of at most `size` pages.
+ *
+ * Chunking is what keeps parallel scanning safe: a chunk is scanned by the
+ * pool one worker per page, then appended to the PDF in document order, so
+ * pages never finish out of order and only `size` canvases are alive at once.
+ *
+ * @param {number} total number of pages to scan
+ * @param {number} size workers available (chunk size)
+ * @returns {number[][]} 1-based page numbers, in document order
+ */
+export function planPageChunks(total, size) {
+  const perChunk = Math.max(1, Math.floor(size || 1));
+  const chunks = [];
+  for (let start = 1; start <= total; start += perChunk) {
+    const chunk = [];
+    for (let page = start; page <= total && chunk.length < perChunk; page += 1) {
+      chunk.push(page);
+    }
+    chunks.push(chunk);
+  }
+  return chunks;
 }
 
 /**
@@ -105,6 +133,19 @@ export function releaseWorker(worker, options = {}) {
   } catch (error) {
     logger.debug("worker terminate failed", error);
   }
+}
+
+/**
+ * Release every worker a scan acquired.
+ *
+ * The pool's engine workers stay warm (`keepAlive`) so the next scan reuses
+ * them; a per-scan fallback worker is disposable.
+ *
+ * @param {Worker[]} workers
+ * @param {{keepAlive?: boolean}} [options]
+ */
+export function releaseWorkers(workers, options = {}) {
+  for (const worker of workers || []) releaseWorker(worker, options);
 }
 
 /** Warm up the full engine (used by the /scan-pdf page before enabling the button). */

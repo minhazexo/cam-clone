@@ -4,8 +4,9 @@
  * Why a worker and not a `<script>` tag: `opencv.js` is ~10 MB of WASM + glue,
  * and parsing it on the main thread freezes the page for seconds. Instead the
  * real scan worker is spawned with a `{ping}` probe and kept warm; the loader
- * hands that same worker to every scan, so the engine is parsed once per page
- * load (never once per scan).
+ * hands that same worker to every scan (and grows a pool of extra warm workers
+ * on demand for parallel scans), so the engine is parsed once per worker per
+ * page load — never once per page scanned.
  *
  * Behaviour preserved from `static/js/opencv-loader.js`:
  *  - prefers the full pipeline worker (`scan-worker-v2.js`, answers `{ready:true}`);
@@ -26,6 +27,14 @@ const PROBE_TIMEOUT_MS = 120000;
 let pending = null;
 /** @type {Worker|null} */
 let warmWorker = null;
+/**
+ * Extra warmed scan workers spawned on demand for parallel scans.
+ * The first worker of a pool is always `warmWorker`; these are the rest.
+ * @type {Worker[]}
+ */
+const spareWorkers = [];
+/** In-flight spawn (serialises pool growth so callers cannot double-spawn). */
+let spawning = null;
 
 /**
  * Spawn a worker and wait until it reports readiness.
@@ -75,7 +84,6 @@ function probe(url, usePing) {
       if (!ok) return; // ignore unrelated messages
       done = true;
       clearTimeout(timer);
-      warmWorker = worker;
       logger.info("scan engine ready", url, usePing ? "(v2-full)" : "(fallback)");
       resolve(worker);
     };
@@ -117,10 +125,12 @@ function ensure() {
   pending = (async () => {
     try {
       const worker = await probe(ASSETS.scanWorkerV2, true);
+      warmWorker = worker;
       return { source: "v2-full", worker };
     } catch (error) {
       logger.warn("full scan engine unavailable, using light worker", error);
       const worker = await probe(ASSETS.scanWorkerFallback, false);
+      warmWorker = worker;
       return { source: "fallback", worker };
     }
   })().catch((error) => {
@@ -130,6 +140,50 @@ function ensure() {
   return pending;
 }
 
+/** Warm one extra worker and append it to `spareWorkers` (never fails the scan). */
+function spawnSpare() {
+  if (!spawning) {
+    spawning = probe(ASSETS.scanWorkerV2, true)
+      .then((worker) => {
+        spareWorkers.push(worker);
+        return true;
+      })
+      .catch((error) => {
+        logger.warn("extra scan worker failed to warm up; continuing with fewer", error);
+        return false;
+      })
+      .finally(() => {
+        spawning = null;
+      });
+  }
+  return spawning;
+}
+
+/**
+ * Ensure `size` scan workers are warm and return them as an array.
+ *
+ * Extra workers are spawned lazily — only when a scan actually has more than
+ * one page to chew through — because compiling ~10 MB of WASM is not free and
+ * a single-page PDF must not pay for it. They then stay warm for later scans,
+ * exactly like the primary worker. Any worker that cannot warm up is dropped
+ * silently: a smaller pool is always a valid outcome.
+ *
+ * @param {number} size number of workers the caller wants (>= 1)
+ * @returns {Promise<{source: string, workers: Worker[]}>}
+ */
+async function ensurePool(size) {
+  const primary = await ensure();
+  const want = Math.max(1, Math.floor(size || 1));
+  // The light fallback worker is a last resort: run it alone (legacy path).
+  if (want > 1 && primary.source === "v2-full") {
+    while (spareWorkers.length + 1 < want && !(await spawnSpare())) break;
+  }
+  return {
+    source: primary.source,
+    workers: [primary.worker, ...spareWorkers.slice(0, want - 1)],
+  };
+}
+
 /** The warm worker, if one has been created (null before warm-up). */
 export function currentWorker() {
   return warmWorker;
@@ -137,13 +191,17 @@ export function currentWorker() {
 
 /** Terminate the warm worker (called on `pagehide`). */
 export function shutdownEngine() {
-  if (!warmWorker) return;
-  try {
-    warmWorker.terminate();
-  } catch (error) {
-    logger.debug("worker terminate failed", error);
-  }
+  const dispose = (worker) => {
+    try {
+      worker.terminate();
+    } catch (error) {
+      logger.debug("worker terminate failed", error);
+    }
+  };
+  if (warmWorker) dispose(warmWorker);
+  for (const worker of spareWorkers) dispose(worker);
   warmWorker = null;
+  spareWorkers.length = 0;
   pending = null;
 }
 
@@ -151,6 +209,13 @@ export function shutdownEngine() {
 export const engine = {
   /** @returns {Promise<{source: string, worker: Worker}>} */
   acquire: ensure,
+  /**
+   * Warm up to `size` workers (1 = legacy single-worker behaviour).
+   *
+   * @param {number} size
+   * @returns {Promise<{source: string, workers: Worker[]}>}
+   */
+  acquirePool: ensurePool,
   /**
    * Legacy callback API: `RScanEngine.ready(onReady, onError)`.
    *
