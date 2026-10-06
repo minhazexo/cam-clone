@@ -20,9 +20,21 @@ Instead, use one of these private channels:
 Please include:
 
 - Description of the issue and potential impact
-- Affected route/component (e.g. `/api/scan`, on-device worker, upload handling)
+- Affected route/component (e.g. `/api/scan`, `/api/scan-pdf-progress`, the
+  on-device worker, upload handling, artifact storage)
 - Steps to reproduce or a proof of concept
 - Suggested fix, if you have one
+
+Useful starting points in the codebase:
+
+| Area | Where |
+|---|---|
+| Request validation and file policy | `rscan/web/routes/`, `rscan/services/` |
+| Artifact naming and traversal protection | `rscan/storage/` |
+| Image decoding (malformed inputs) | `rscan/scanner/image_io.py` |
+| PDF rendering (malformed inputs) | `rscan/pdf/renderer.py` |
+| Error exposure (what reaches the client) | `rscan/web/app_factory.py`, `rscan/errors.py` |
+| Browser worker sandbox | `static/js/workers/` |
 
 ## What to expect
 

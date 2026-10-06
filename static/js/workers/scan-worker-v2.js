@@ -1,7 +1,7 @@
 "use strict";
 if (typeof importScripts === 'function') {
   importScripts('/static/vendor/opencv.js');
-  importScripts('/static/js/scan-geometry.js');
+  importScripts('/static/js/workers/scan-geometry.js');
 }
 // Geometry module: worker global (importScripts order above) or Node harness
 // (sets globalThis.RScanGeometry before requiring this file).

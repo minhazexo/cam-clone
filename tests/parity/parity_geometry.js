@@ -7,10 +7,10 @@ global.self=global;
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 const FIX = path.join(ROOT, 'tests', 'fixtures');
 const OPENCV_ABS = path.join(ROOT, 'static', 'vendor', 'opencv.js');
-const GEOM_ABS = path.join(ROOT, 'static', 'js', 'scan-geometry.js');
+const GEOM_ABS = path.join(ROOT, 'static', 'js', 'workers', 'scan-geometry.js');
 const REF_ASPECT = 893.0 / 1263.0;
 
 function main() {

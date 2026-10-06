@@ -7,11 +7,11 @@ global.self=global;
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 const FIX = path.join(ROOT, 'tests', 'fixtures');
 const OPENCV_ABS = path.join(ROOT, 'static', 'vendor', 'opencv.js');
-const GEOM_ABS = path.join(ROOT, 'static', 'js', 'scan-geometry.js');
-const WORKER_ABS = path.join(ROOT, 'static', 'js', 'scan-worker-v2.js');
+const GEOM_ABS = path.join(ROOT, 'static', 'js', 'workers', 'scan-geometry.js');
+const WORKER_ABS = path.join(ROOT, 'static', 'js', 'workers', 'scan-worker-v2.js');
 
 const BASE = {
   // Regenerated after reframe-first binding order + post-enhance trim:

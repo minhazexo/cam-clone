@@ -1,4 +1,18 @@
-/* Local-only image enhancement worker. No file or network access is used. */
+/* Light fallback image-enhancement worker (the v1 worker).
+ *
+ * Used only when the full engine (`scan-worker-v2.js` + OpenCV.js WASM) cannot
+ * load (see `static/js/workers/engine-loader.js`). It performs a cheap
+ * per-pixel paper/ink blend instead of the real pipeline, so output quality is
+ * intentionally lower — the `/scan-pdf` page waits for the full engine
+ * instead.
+ *
+ * Worker protocol: same message shape as the v2 worker, minus `stats` and the
+ * `ping` warmup probe:
+ *   request   { width, height, pixels: ArrayBuffer }   RGBA, transferable
+ *   response  { width, height, pixels: ArrayBuffer }   RGBA, transferable
+ *
+ * Local-only: no file or network access is used.
+ */
 "use strict";
 
 self.onmessage = ({ data }) => {

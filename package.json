@@ -1,8 +1,8 @@
 {
   "name": "rscan-smart-scanner",
   "private": true,
-  "version": "0.2.0",
-  "description": "CamScanner-style smart document scanner — Flask + OpenCV server API and fully on-device PDF scanning in the browser.",
+  "version": "0.3.0",
+  "description": "CamScanner-style smart document scanner — Flask + OpenCV server pipeline and fully on-device PDF scanning in the browser.",
   "license": "GPL-3.0-only",
   "homepage": "https://github.com/minhazexo/cam-clone#readme",
   "repository": {
@@ -15,7 +15,6 @@
   "keywords": [
     "document-scanner",
     "camscanner",
-    "ocr-adjacent",
     "opencv",
     "pdf",
     "flask",
@@ -23,11 +22,14 @@
     "on-device"
   ],
   "scripts": {
-    "dev": "bun run build && python app.py",
+    "dev": "bun run build && sh -c 'PY=$(command -v python3 || command -v python) && exec \"$PY\" app.py'",
     "build": "bun run scripts/build.ts",
     "check": "bun run scripts/check.ts",
-    "parity": "node tests/parity_worker.js && node tests/parity_geometry.js && node tests/parity_full.js",
-    "test": "bun run check && bun run parity"
+    "parity": "node tests/parity/parity_worker.js && node tests/parity/parity_geometry.js && node tests/parity/parity_full.js",
+    "test:js": "bun test tests/js",
+    "test:python": "sh -c 'PY=$(command -v python3 || command -v python) && exec \"$PY\" -m unittest discover -s tests -t . -p \"test_*.py\"'",
+    "test": "bun run check && bun run parity && bun run test:js && bun run test:python",
+    "fixtures": "sh -c 'PY=$(command -v python3 || command -v python) && \"$PY\" scripts/gen_fixtures.py && \"$PY\" scripts/dump_stages.py && \"$PY\" scripts/dump_rgb.py'"
   },
   "dependencies": {
     "pdf-lib": "^1.17.1",
