@@ -38,12 +38,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # `bun run parity` is the same entrypoint developers use locally; it
+      # shells out to node for the three harnesses.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
       - uses: actions/setup-node@v4
         with:
           node-version: 20
 
-      # The parity harnesses load the committed vendor files directly, so no
-      # install step is needed — which keeps this job fast and dependency-free.
+      # The harnesses require only fs/path and the committed vendor files, so
+      # there is no install step — which keeps this job fast and stable.
       - name: Worker, geometry and full-pipeline parity
         run: bun run parity
 
