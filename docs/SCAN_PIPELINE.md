@@ -105,7 +105,12 @@ Rules that keep it correct and fast:
 * Every `cv.Mat` is deleted in a `try/finally` inside the worker. One leaked
   Mat per page crashes the tab on long PDFs.
 * The worker replies with an explicit `error` message instead of throwing, so
-  the UI can show a message instead of dying silently.
+  the UI can show a message instead of dying silently. An `error` that is a
+  bare number is a raw C++ exception pointer from the Emscripten glue (an
+  OpenCV assertion or `bad_alloc`, usually a page whose working set exceeded
+  the WASM heap): the module is left unusable, so the client treats the worker
+  as poisoned — it is discarded from the pool and the page retried on a fresh,
+  smaller pool (`pdf-processing.js: enhanceCanvas`, `on-device-pdf-scan.js`).
 * Warm workers are reused for every page of every scan (`engine-loader.js`);
   only the fallback worker is terminated per scan. For local PDF scans the
   loader can hand out a **pool** of workers (see `docs/PDF_PIPELINE.md` →

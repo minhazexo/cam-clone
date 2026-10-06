@@ -89,6 +89,11 @@ describe("constants contract", () => {
     expect(PDF_PROFILES.full.pageMode).toBe("a4");
     expect(PDF_PROFILES.full.drawBorder).toBe(true);
     expect(PDF_PROFILES.fallback.pageMode).toBe("source");
+    // Pixel budget: width caps alone let long receipts/plots render past
+    // what the scan worker's WASM heap can hold (canvas budget is the
+    // second line of defence — REF_CANVAS_MAX_PIXELS in the scanner).
+    expect(PDF_PROFILES.full.maxPagePixels).toBe(12000000);
+    expect(PDF_PROFILES.fallback.maxPagePixels).toBeNull();
     expect(PDF_PROFILES.fallback.drawBorder).toBe(false);
     expect(PDF_PROFILES.fallback.jpegQuality).toBeGreaterThan(PDF_PROFILES.full.jpegQuality);
   });

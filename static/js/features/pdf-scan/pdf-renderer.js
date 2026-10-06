@@ -27,7 +27,14 @@ export function isSmallScreen() {
 export function renderScaleFor(pageSize, profile) {
   if (profile.renderDpi) {
     const capWidth = isSmallScreen() ? profile.capWidthSmall : profile.capWidthLarge;
-    return Math.min(profile.renderDpi / 72, capWidth / pageSize.width);
+    const scale = Math.min(profile.renderDpi / 72, capWidth / pageSize.width);
+    // Pixel budget: a very tall page (receipt, plot) must not render more
+    // pixels than the scan worker's WASM heap can hold.
+    if (profile.maxPagePixels) {
+      return Math.min(scale,
+        Math.sqrt(profile.maxPagePixels / (pageSize.width * pageSize.height)));
+    }
+    return scale;
   }
   return Math.min(profile.fallbackScaleCap, profile.fallbackFitWidth / pageSize.width);
 }

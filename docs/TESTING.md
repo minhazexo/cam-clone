@@ -19,6 +19,7 @@ Individual lanes:
 node tests/parity/parity_worker.js      # photometry stage
 node tests/parity/parity_geometry.js    # geometry + cleanups
 node tests/parity/parity_full.js        # full pipeline
+node tests/parity/parity_receipt.js     # canvas pixel budget (long receipt)
 bun test tests/js                       # frontend
 python3 -m unittest tests.unit -v        # backend units only
 python3 -m unittest tests.integration -v # API flows only
@@ -45,6 +46,7 @@ compared byte-for-byte (mean absolute difference, MAD) against fixtures that the
 | `parity_worker.js` | `in_*.rgb` → `exp_*.rgb` | MAD ≤ 3.0, sharpness within ±10 %, dims equal |
 | `parity_geometry.js` | `st_*.rgb`, `stages_*.json` | contour null-ness (±2 px), dims exact, MAD ≤ 3.0 (≤ 1.0 for non-rotating stages), tilt ±0.15° |
 | `parity_full.js` | `in_*.rgb` → `full_*.rgb` | dims exact, MAD ≤ 3.0, tilt and sharpness gates |
+| `parity_receipt.js` | `receipt_dims.json` | reframe + full-pipeline dims equal to Python's, canvas ≤ `REF_CANVAS_MAX_PIXELS` (dims anchor — no multi-MB pixel dump for the 400×8000 input) |
 
 Reading a failure:
 
@@ -61,6 +63,7 @@ intentional pipeline change:
 python scripts/gen_fixtures.py    # in/exp/full rgb + <name>.json
 python scripts/dump_stages.py     # per-stage st_*.rgb + stages_*.json
 python scripts/dump_rgb.py        # in_*.rgb from the committed PNGs
+python scripts/gen_receipt_fixture.py  # receipt_dims.json (canvas-budget anchor)
 ```
 
 Then explain in the PR and `CHANGELOG.md` what moved and why (expected MAD,

@@ -50,6 +50,18 @@ REF_MARGIN_BOTTOM = 0.040
 #: Parity-sensitive: the JS worker hardcodes the same fraction.
 REF_ASPECT_FALLBACK = 893.0 / 1263.0
 
+#: Hard cap on the re-framed canvas area (width × height, in pixels). Content
+#: whose aspect ratio differs far from the reference (long receipts, plots,
+#: tickets) is widened to the reference aspect while its pixels are pasted at
+#: native size; a 400×8000 receipt therefore becomes a ~54 MP canvas that
+#: exhausts the browser worker's 1 GB WASM heap (bad_alloc) while Python
+#: survives on system RAM. Above the cap the canvas *and* the pasted content
+#: are scaled down uniformly, which keeps margins, aspect and the final
+#: A4-embedded output unchanged (the embed downscales the whole canvas
+#: anyway) — it only removes redundant pixels.
+#: Parity-sensitive: the JS worker mirrors this value and the exact formula.
+REF_CANVAS_MAX_PIXELS = 16_000_000
+
 # ── Pipeline defaults ─────────────────────────────────────────────────────
 
 #: Default upscale of the final scan (reference.png is ~2x the wiki photo).
@@ -71,5 +83,6 @@ __all__ = [
     "REF_MARGIN_TOP",
     "REF_MARGIN_BOTTOM",
     "REF_ASPECT_FALLBACK",
+    "REF_CANVAS_MAX_PIXELS",
     "DEFAULT_OUTPUT_SCALE",
 ]

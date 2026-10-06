@@ -20,6 +20,9 @@
   var REF_MARGIN_LEFT = 0.069, REF_MARGIN_RIGHT = 0.071;
   var REF_MARGIN_TOP = 0.070, REF_MARGIN_BOTTOM = 0.040;
   var REF_ASPECT_FALLBACK = 893.0 / 1263.0;
+  // Mirror of REF_CANVAS_MAX_PIXELS (rscan/scanner/constants.py): cap on the
+  // re-framed canvas area; above it canvas+content scale down uniformly.
+  var REF_CANVAS_MAX_PIXELS = 16000000;
 
   // ---------- JS math helpers ----------
   function clip(v, lo, hi) { return v < lo ? lo : (v > hi ? hi : v); }
@@ -887,12 +890,33 @@
         canvasW = pyRound(bw / Math.max(1e-6, 1.0 - left - right));
         canvasH = pyRound(bh / Math.max(1e-6, 1.0 - top - bottom));
       }
+      // Pixel budget (mirrors postprocessing.py exactly): uniform downscale
+      // of canvas and content when the canvas exceeds the cap, so extreme-
+      // aspect inputs (long receipts) cannot explode the WASM heap.
+      var content = rgb.roi(new cv.Rect(x0, y0, bw, bh));
+      if (canvasW * canvasH > REF_CANVAS_MAX_PIXELS) {
+        var scale = Math.sqrt(REF_CANVAS_MAX_PIXELS / (canvasW * canvasH));
+        var scaled = new cv.Mat();
+        cv.resize(content, scaled,
+          new cv.Size(Math.max(1, pyRound(bw * scale)),
+                      Math.max(1, pyRound(bh * scale))),
+          0, 0, cv.INTER_LANCZOS4);
+        del(content);
+        content = scaled;
+        canvasW = Math.max(1, pyRound(canvasW * scale));
+        canvasH = Math.max(1, pyRound(canvasH * scale));
+        bh = content.rows;
+        bw = content.cols;
+      }
       var ox = pyRound((canvasW - bw) / 2.0), oyTop = pyRound(top * canvasH);
+      // Independent rounding of the scaled dims can shift the paste by ±1 px:
+      // clamp identically in Python (a no-op when it fits).
+      ox = Math.max(0, Math.min(ox, canvasW - bw));
+      oyTop = Math.max(0, Math.min(oyTop, canvasH - bh));
       var canvas = new cv.Mat(canvasH, canvasW, cv.CV_8UC3, new cv.Scalar(255, 255, 255));
       var roi = canvas.roi(new cv.Rect(ox, oyTop, bw, bh));
-      var srcRoi = rgb.roi(new cv.Rect(x0, y0, bw, bh));
-      srcRoi.copyTo(roi);
-      del(roi, srcRoi);
+      content.copyTo(roi);
+      del(roi, content);
       return canvas;
     } finally {
       del(gray, labels, stats, cents);

@@ -27,6 +27,7 @@ import cv2 as cv
 import numpy as np
 
 from rscan.scanner.constants import (
+    REF_CANVAS_MAX_PIXELS,
     REF_MARGIN_BOTTOM,
     REF_MARGIN_LEFT,
     REF_MARGIN_RIGHT,
@@ -252,15 +253,37 @@ def reframe_like_reference(image: np.ndarray, ink_threshold: int = 160,
     else:
         canvas_w = int(round(bw / max(1e-6, 1.0 - left - right)))
         canvas_h = int(round(bh / max(1e-6, 1.0 - top - bottom)))
+    # Pixel budget: scale canvas and content down uniformly when the canvas
+    # exceeds REF_CANVAS_MAX_PIXELS (extreme-aspect inputs widen to the
+    # reference aspect and would otherwise explode — 54 MP for a long
+    # receipt — which the browser worker's WASM heap cannot hold). The
+    # uniform scale keeps margins/aspect intact, so the final A4-embedded
+    # output is unchanged; only redundant white pixels are dropped.
+    # Parity-sensitive: scan-geometry.js applies the identical formula.
+    content = image[y0:y1, x0:x1]
+    if canvas_w * canvas_h > REF_CANVAS_MAX_PIXELS:
+        scale = math.sqrt(REF_CANVAS_MAX_PIXELS / (canvas_w * canvas_h))
+        content = cv.resize(
+            content,
+            (max(1, int(round(bw * scale))), max(1, int(round(bh * scale)))),
+            interpolation=cv.INTER_LANCZOS4)
+        canvas_w = max(1, int(round(canvas_w * scale)))
+        canvas_h = max(1, int(round(canvas_h * scale)))
+        bh = content.shape[0]
+        bw = content.shape[1]
     ox = int(round((canvas_w - bw) / 2.0))
     oy_top = int(round(top * canvas_h))
+    # Independent rounding of the scaled dims can shift the paste by ±1 px:
+    # clamp identically in both implementations (a no-op when it fits).
+    ox = max(0, min(ox, canvas_w - bw))
+    oy_top = max(0, min(oy_top, canvas_h - bh))
     PAPER_GRAY = 255  # let HPF provide natural paper tone in content area
     if image.ndim == 3:
         canvas = np.full((canvas_h, canvas_w, 3), PAPER_GRAY, dtype=np.uint8)
-        canvas[oy_top:oy_top + bh, ox:ox + bw] = image[y0:y1, x0:x1]
+        canvas[oy_top:oy_top + bh, ox:ox + bw] = content
     else:
         canvas = np.full((canvas_h, canvas_w), PAPER_GRAY, dtype=np.uint8)
-        canvas[oy_top:oy_top + bh, ox:ox + bw] = image[y0:y1, x0:x1]
+        canvas[oy_top:oy_top + bh, ox:ox + bw] = content
     return canvas
 
 

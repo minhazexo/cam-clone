@@ -85,7 +85,19 @@ export function enhanceCanvas(canvas, worker) {
     worker.onmessage = (event) => {
       const data = event && event.data;
       if (data && data.error) {
-        reject(new EngineUnavailableError(`Scan worker failed: ${data.error}`));
+        // A bare numeric detail is a raw C++ exception pointer from the
+        // Emscripten glue (`throw ptr`): an uncaught OpenCV assertion or an
+        // out-of-memory inside the worker's WASM heap. The module is left in
+        // an undefined state, so callers must treat the worker as poisoned
+        // (see `engineFault`) and replace it before sending another page.
+        const raw = String(data.error);
+        const detail = /^-?\d+$/.test(raw)
+          ? "the scan engine hit an OpenCV error or ran out of memory"
+          : raw;
+        logger.warn("scan worker engine fault", { code: raw });
+        const error = new EngineUnavailableError(`Scan worker failed: ${detail}`);
+        error.engineFault = true;
+        reject(error);
         return;
       }
       if (!data || !data.pixels) {
@@ -106,7 +118,9 @@ export function enhanceCanvas(canvas, worker) {
     };
 
     worker.onerror = () => {
-      reject(new EngineUnavailableError("Scan worker stopped unexpectedly."));
+      const error = new EngineUnavailableError("Scan worker stopped unexpectedly.");
+      error.engineFault = true;
+      reject(error);
     };
 
     try {
@@ -121,13 +135,21 @@ export function enhanceCanvas(canvas, worker) {
 }
 
 /**
- * Terminate a worker that this module created (never the warm engine worker).
+ * Terminate a worker, or hand it back to the pool.
  *
  * @param {Worker|null} worker
- * @param {{keepAlive?: boolean}} [options]
+ * @param {{keepAlive?: boolean, discard?: boolean}} [options]
+ *   `keepAlive` leaves a warm pool worker untouched; `discard` terminates
+ *   the worker AND drops it from the warm pool (used for engine faults,
+ *   whose WASM module must never receive another page).
  */
 export function releaseWorker(worker, options = {}) {
-  if (!worker || options.keepAlive) return;
+  if (!worker) return;
+  if (options.discard) {
+    engine.discard([worker]);
+    return;
+  }
+  if (options.keepAlive) return;
   try {
     worker.terminate();
   } catch (error) {

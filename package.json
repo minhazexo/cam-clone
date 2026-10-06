@@ -25,7 +25,7 @@
     "dev": "bun run build && sh -c 'PY=$(command -v python3 || command -v python) && exec \"$PY\" app.py'",
     "build": "bun run scripts/build.ts",
     "check": "bun run scripts/check.ts",
-    "parity": "node tests/parity/parity_worker.js && node tests/parity/parity_geometry.js && node tests/parity/parity_full.js",
+    "parity": "node tests/parity/parity_worker.js && node tests/parity/parity_geometry.js && node tests/parity/parity_full.js && node tests/parity/parity_receipt.js",
     "test:js": "bun test tests/js",
     "test:python": "sh -c 'PY=$(command -v python3 || command -v python) && exec \"$PY\" -m unittest discover -s tests -t . -p \"test_*.py\"'",
     "test": "bun run check && bun run parity && bun run test:js && bun run test:python",

@@ -124,7 +124,11 @@ Pages are processed in chunks of `scanPoolPlan(...).workers` (pool size, with
 the reason surfaced in the UI) so N pages scan at once; the append step stays
 strictly ordered. Do not send two requests
 to one worker — each worker holds one in-flight message (`core/constants.js`,
-`planPageChunks`, `engine-loader.acquirePool`).
+`planPageChunks`, `engine-loader.acquirePool`). A worker whose WASM engine
+faults (raw C++ exception: assertion or out-of-memory) is discarded and the
+batch retried on a fresh, one-worker-smaller pool; the re-framed canvas is
+capped at `REF_CANVAS_MAX_PIXELS` on both sides of the parity contract so
+extreme-aspect pages (receipts) cannot exhaust the heap.
 
 ## 7. Scanner pipeline (server)
 

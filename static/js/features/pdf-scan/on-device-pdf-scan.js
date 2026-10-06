@@ -18,7 +18,7 @@
  */
 
 import { LIMITS, PDF_PROFILES, scanPoolPlan } from "../../core/constants.js";
-import { LocalPdfLimitError } from "../../core/errors.js";
+import { EngineUnavailableError, LocalPdfLimitError } from "../../core/errors.js";
 import { logger } from "../../core/logger.js";
 import { canKeepThumbnail } from "../../core/state.js";
 import { acquireWorkers, enhanceCanvas, planPageChunks, releaseWorkers } from "./pdf-processing.js";
@@ -73,11 +73,14 @@ export async function runOnDevicePdfScan(file, pageLimit, panel, profile = PDF_P
     smallScreen: isSmallScreen(),
     profile,
   });
-  const { workers, source: workerSource } = await acquireWorkers(profile, plan.workers);
+  let poolSize = plan.workers;
+  const firstAcquire = await acquireWorkers(profile, poolSize);
+  let workers = firstAcquire.workers;
+  const workerSource = firstAcquire.source;
   const output = await createOutputDocument();
   const pageImages = [];
-  const poolLabel = plan.workers > 1
-    ? `${plan.workers} pages at once (${plan.reason})`
+  const poolLabel = workers.length > 1
+    ? `${workers.length} pages at once (${plan.reason})`
     : `1 page at a time (${plan.reason})`;
   panel.done(`Engine worker ready (${workerSource}) — ${poolLabel}`);
   logger.debug("scan pool plan", {
@@ -99,21 +102,62 @@ export async function runOnDevicePdfScan(file, pageLimit, panel, profile = PDF_P
     return rendered;
   }
 
-  const chunks = planPageChunks(pagesToScan, workers.length);
+  let cursor = 1;
+  /** Next batch of pages for the CURRENT pool size (re-sized after recovery). */
+  function takeBatch() {
+    const rest = pagesToScan - cursor + 1;
+    if (rest <= 0) return [];
+    const [batch] = planPageChunks(rest, Math.max(1, workers.length));
+    cursor += batch.length;
+    const offset = cursor - batch.length - 1;
+    return batch.map((page) => page + offset);
+  }
+  const firstBatch = takeBatch();
+  panel.beginStep(firstBatch.length > 1
+    ? `Scanning pages 1\u2013${firstBatch[firstBatch.length - 1]} of ${pagesToScan}\u2026`
+    : `Scanning page 1 of ${pagesToScan}\u2026`);
+  let currentBatch = firstBatch;
   // Scan the *next* chunk while this one is encoded and appended. The workers
   // are separate threads, so scanning keeps running while the main thread
   // embeds pages — and only one chunk holds the pool at a time, so ordering
   // stays strict: chunk i is always fully appended before chunk i + 1.
-  let pendingScan = chunks.length ? prepareChunk(chunks[0]) : null;
+  let pendingScan = prepareChunk(currentBatch);
 
   try {
-    for (let index = 0; index < chunks.length; index += 1) {
-      if (index === 0) {
-        panel.beginStep(`Scanning pages 1\u2013${chunks[0][chunks[0].length - 1]} of ${pagesToScan}\u2026`);
+    for (;;) {
+      let scanned;
+      try {
+        scanned = await pendingScan;
+      } catch (error) {
+        if (!error || !error.engineFault) throw error;
+        // A worker's WASM engine threw an uncaught C++ exception (OpenCV
+        // assertion or out-of-memory) and is left unusable. Drop the whole
+        // pool, warm a smaller fresh one and re-run this batch; each retry
+        // shrinks the pool, so persistent pressure degrades to one worker
+        // instead of failing the scan outright.
+        logger.warn("scan pool faulted; restarting with fresh workers", {
+          message: error.message, poolSize,
+        });
+        releaseWorkers(workers, { discard: true });
+        if (poolSize <= 1) {
+          throw new EngineUnavailableError(
+            `${error.message}. The local scan could not recover \u2014 try again, or use the server scan.`);
+        }
+        poolSize = Math.max(1, poolSize - 1);
+        workers = (await acquireWorkers(profile, poolSize)).workers;
+        panel.done(`Scan engine faulted \u2014 restarting with ${poolSize} worker${poolSize === 1 ? "" : "s"}…`);
+        pendingScan = prepareChunk(currentBatch);
+        continue;
       }
-      const scanned = await pendingScan;
+
       // Start the next chunk's render+scan *before* appending this one …
-      pendingScan = index + 1 < chunks.length ? prepareChunk(chunks[index + 1]) : null;
+      const next = takeBatch();
+      if (next.length) {
+        currentBatch = next;
+        pendingScan = prepareChunk(next);
+      } else {
+        pendingScan = null;
+      }
 
       // … then append this chunk strictly in page order (pdf-lib requires it).
       for (const item of scanned) {
@@ -134,6 +178,7 @@ export async function runOnDevicePdfScan(file, pageLimit, panel, profile = PDF_P
         item.canvas.width = 0;
         item.canvas.height = 0;
       }
+      if (!pendingScan) break;
     }
 
     panel.beginStep("Building PDF\u2026");
