@@ -114,3 +114,22 @@ export function canvasToJpegBytes(canvas, quality) {
 export function canvasToDataUrl(canvas, quality) {
   return canvas.toDataURL("image/jpeg", quality);
 }
+
+/**
+ * Draw a canvas into a fresh thumbnail canvas (long side capped, never
+ * upscaled). Used for the results grid: every scanned page keeps a preview,
+ * so each one must be small enough that a 250-page document cannot hold
+ * hundreds of MB of full-size data URLs.
+ *
+ * @param {HTMLCanvasElement} canvas
+ * @param {number} maxSide cap on the long side, in pixels
+ * @returns {HTMLCanvasElement} a new canvas (caller disposes it)
+ */
+export function canvasThumbnail(canvas, maxSide) {
+  const scale = Math.min(1, maxSide / Math.max(canvas.width, canvas.height));
+  const thumb = document.createElement("canvas");
+  thumb.width = Math.max(1, Math.round(canvas.width * scale));
+  thumb.height = Math.max(1, Math.round(canvas.height * scale));
+  thumb.getContext("2d").drawImage(canvas, 0, 0, thumb.width, thumb.height);
+  return thumb;
+}

@@ -20,7 +20,6 @@
 import { LIMITS, PDF_PROFILES, scanPoolPlan } from "../../core/constants.js";
 import { EngineUnavailableError, LocalPdfLimitError } from "../../core/errors.js";
 import { logger } from "../../core/logger.js";
-import { canKeepThumbnail } from "../../core/state.js";
 import { acquireWorkers, enhanceCanvas, planPageChunks, releaseWorkers } from "./pdf-processing.js";
 import { appendPage, createOutputDocument, saveOutputDocument } from "./pdf-export.js";
 import { openPdfDocument } from "./pdf-engine.js";
@@ -160,16 +159,16 @@ export async function runOnDevicePdfScan(file, pageLimit, panel, profile = PDF_P
       }
 
       // … then append this chunk strictly in page order (pdf-lib requires it).
+      // Every page keeps a (downscaled) thumbnail so the grid shows all of
+      // them; the PDF bytes always contained every page regardless.
       for (const item of scanned) {
-        const keepPreview = canKeepThumbnail(pageImages.length);
         const preview = await appendPage(output, item.canvas, {
           pageMode: profile.pageMode,
           drawBorder: profile.drawBorder,
           jpegQuality: profile.jpegQuality,
           sourcePageSize: item.sourcePageSize,
-          preview: keepPreview,
         });
-        if (keepPreview) pageImages.push(preview);
+        pageImages.push(preview);
         panel.page(item.pageNumber);
         panel.done(`Page ${item.pageNumber} of ${pagesToScan} scanned`);
         panel.progress(item.pageNumber, pagesToScan);

@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed — results grid showed only 12 pages after a PDF scan
+
+On-device PDF scans previewed every page in the results grid only up to
+`LIMITS.maxThumbnails` (12): a 40-page document rendered exactly 12 page
+cards (the downloadable PDF always contained every page — only the previews
+were capped, which made it look like pages were missing).
+
+- **All pages are shown.** The count cap (`canKeepThumbnail` / `maxThumbnails`)
+  is removed; `pageImages` now holds one entry per scanned page and
+  `renderLocalPageGrid` renders them all (the home page's "N page(s) scanned
+  locally" caption now reports the true count too).
+- **Previews are downscaled instead of count-limited.** Each thumbnail is
+  encoded from a canvas capped at `THUMBNAIL_MAX_SIDE` (960 px long side) at
+  the profile's JPEG quality — a few tens of KB per page, so a 250-page
+  document holds a few MB rather than the hundreds of MB that full-size data
+  URLs would have needed (the reason the cap existed). Card metadata still
+  reports the full page dimensions, and the encode is cheaper than before.
+- The download is unchanged: the on-device PDF bytes always included every
+  scanned page; the Download button on `/scan-pdf` and the home page's
+  Download All hand over the complete new PDF.
+
 ### Fixed — on-device scan crash on extreme-aspect pages
 
 Scanning a long, narrow PDF page (a 400×8000 receipt or plot) on `/scan-pdf`
@@ -65,7 +86,8 @@ Selecting a PDF no longer scans strictly one page at a time:
   are unchanged, and memory stays bounded to two chunks of canvases.
 - **Non-blocking JPEG encode.** `canvas.toBlob` + `arrayBuffer()` replaces the
   synchronous `toDataURL` + base64-decode loop (same encoder, same quality),
-  and the results-grid thumbnail is only encoded when it will be kept.
+  and the results-grid thumbnail is encoded from a downscaled canvas (see
+  *Fixed — results grid showed only 12 pages* in this release).
 - **Server sync endpoint parallelised.** `POST /api/scan-pdf` now shares
   `scan_pages_parallel` with the background job. The worker bound is
   affinity-aware (`sched_getaffinity`, falling back to `os.cpu_count()`), so a

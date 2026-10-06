@@ -31,7 +31,7 @@ export const ASSETS = {
   scanWorkerFallback: "/static/js/workers/scan-worker.js",
 };
 
-/** Client-side limits (mirrored by the server settings). */
+/* * Client-side limits (mirrored by the server settings). */
 export const LIMITS = {
   /** Largest PDF the browser will process locally (250 MB). */
   maxLocalPdfBytes: 250 * 1024 * 1024,
@@ -39,8 +39,6 @@ export const LIMITS = {
   maxLocalPdfPages: 250,
   /** `null` means "all pages" for the page-limit modal. */
   defaultPageLimit: null,
-  /** Thumbnails kept for the results grid (memory guard). */
-  maxThumbnails: 12,
   /** How long to wait for pdf.js before giving the user an actionable error. */
   pdfLoadTimeoutMs: 60000,
 };
@@ -54,6 +52,17 @@ export const ACCEPT = {
 
 /** Page-limit choices offered by the modal (data-limit values). */
 export const PAGE_LIMIT_OPTIONS = [10, 20, 30, 40, 50, "all"];
+
+/**
+ * Long side (px) of the results-grid thumbnails.
+ *
+ * Every scanned page gets a thumbnail (the grid must show all pages), so
+ * each one is downscaled to this bound before encoding — 250 pages of
+ * full-size JPEGs as data URLs would hold hundreds of MB, while ~960 px at
+ * the profile's JPEG quality is a few tens of KB per page. Sized for a
+ * 2x-displayed card in the auto-filled results grid.
+ */
+export const THUMBNAIL_MAX_SIDE = 960;
 
 /**
  * On-device PDF scan profiles.
