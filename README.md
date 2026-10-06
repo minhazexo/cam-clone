@@ -52,8 +52,9 @@ Python pipeline (`bun run parity`).
 * **Page-limit picker** — 10/20/30/40/50/All on both scan pages (local caps:
   250 MB, 250 pages).
 * **Parallel page scanning** — server PDF jobs scan pages on a bounded CPU
-  pool, and local scans run a worker pool (one OpenCV.js worker per page, up to
-  4 pages at once) with out-of-order-free, in-order assembly.
+  pool, and local scans run a worker pool (one OpenCV.js worker per page, up
+  to 6 at once — 3 on small screens, all cores below 8) with the reason shown
+  in the UI and strictly in-order assembly.
 * **EXIF-aware uploads** — phone photos are rotated upright before scanning.
 * **No accounts, no database, no API keys** — files stay on the machine or in
   the browser.

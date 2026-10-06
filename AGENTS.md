@@ -120,8 +120,9 @@ pdf-engine.js (pdf.js + pdf-lib ready)
   → pdf-lib save()   → blob URL → /api/pdf-* never involved
 ```
 
-Pages are processed in chunks of `scanPoolSize(...)` (pool size) so N pages
-scan at once; the append step stays strictly ordered. Do not send two requests
+Pages are processed in chunks of `scanPoolPlan(...).workers` (pool size, with
+the reason surfaced in the UI) so N pages scan at once; the append step stays
+strictly ordered. Do not send two requests
 to one worker — each worker holds one in-flight message (`core/constants.js`,
 `planPageChunks`, `engine-loader.acquirePool`).
 

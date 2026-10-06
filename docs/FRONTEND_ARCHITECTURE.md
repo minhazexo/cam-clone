@@ -107,7 +107,8 @@ See `SCAN_PIPELINE.md` → "Worker protocol". From the frontend's perspective:
 * Workers are never created per page: one warm worker per page load, plus
   lazily-warmed spares for parallel local scans (one in-flight message per
   worker, so each worker gets its own `onmessage`). Pool sizing lives in
-  `core/constants.js: scanPoolSize`; chunking in `planPageChunks`.
+  `core/constants.js: scanPoolPlan` (workers + reason); chunking in
+  `planPageChunks`.
 
 ## PDF processing flow (both pages)
 

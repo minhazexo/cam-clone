@@ -17,7 +17,7 @@
  * Nothing leaves the browser: no fetch, no upload, no server round-trip.
  */
 
-import { LIMITS, PDF_PROFILES, scanPoolSize } from "../../core/constants.js";
+import { LIMITS, PDF_PROFILES, scanPoolPlan } from "../../core/constants.js";
 import { LocalPdfLimitError } from "../../core/errors.js";
 import { logger } from "../../core/logger.js";
 import { canKeepThumbnail } from "../../core/state.js";
@@ -67,44 +67,56 @@ export async function runOnDevicePdfScan(file, pageLimit, panel, profile = PDF_P
   panel.showTotal(pagesToScan);
   panel.title(`Scanning ${pagesToScan} pages\u2026`);
 
-  const poolSize = scanPoolSize({
+  const plan = scanPoolPlan({
     pageCount: pagesToScan,
     hardwareConcurrency: navigator.hardwareConcurrency,
     smallScreen: isSmallScreen(),
     profile,
   });
-  const { workers, source: workerSource } = await acquireWorkers(profile, poolSize);
+  const { workers, source: workerSource } = await acquireWorkers(profile, plan.workers);
   const output = await createOutputDocument();
   const pageImages = [];
-  panel.done(`Engine worker ready (${workerSource})${workers.length > 1 ? `, ${workers.length} pages at once` : ""}`);
+  const poolLabel = plan.workers > 1
+    ? `${plan.workers} pages at once (${plan.reason})`
+    : `1 page at a time (${plan.reason})`;
+  panel.done(`Engine worker ready (${workerSource}) — ${poolLabel}`);
+  logger.debug("scan pool plan", {
+    workers: workers.length, reason: plan.reason, pages: pagesToScan,
+    cores: navigator.hardwareConcurrency, smallScreen: isSmallScreen(),
+  });
+
+  /** Render one chunk (pdf.js, off the main thread), then scan it with the pool. */
+  async function prepareChunk(chunk) {
+    const rendered = await Promise.all(chunk.map(async (pageNumber) => {
+      const pdfPage = await source.getPage(pageNumber);
+      const sourcePageSize = pdfPage.getViewport({ scale: 1 });
+      const canvas = await renderPageToCanvas(pdfPage, profile);
+      return { pageNumber, canvas, sourcePageSize };
+    }));
+    // One in-flight message per worker: the pool scans this chunk alone, so
+    // no worker ever receives a second request before answering the first.
+    await Promise.all(rendered.map((item, index) => enhanceCanvas(item.canvas, workers[index])));
+    return rendered;
+  }
+
+  const chunks = planPageChunks(pagesToScan, workers.length);
+  // Scan the *next* chunk while this one is encoded and appended. The workers
+  // are separate threads, so scanning keeps running while the main thread
+  // embeds pages — and only one chunk holds the pool at a time, so ordering
+  // stays strict: chunk i is always fully appended before chunk i + 1.
+  let pendingScan = chunks.length ? prepareChunk(chunks[0]) : null;
 
   try {
-    // Pages run in chunks of `workers.length`: render the chunk (pdf.js, off
-    // the main thread), scan it with one worker per page, then append those
-    // pages in document order. The pool stays saturated, only one chunk of
-    // canvases is alive at a time, and pdf-lib always receives pages in order.
-    for (const chunk of planPageChunks(pagesToScan, workers.length)) {
-      const first = chunk[0];
-      const last = chunk[chunk.length - 1];
-      panel.beginStep(chunk.length > 1
-        ? `Scanning pages ${first}\u2013${last} of ${pagesToScan}\u2026`
-        : `Scanning page ${first} of ${pagesToScan}\u2026`);
-      panel.page(first);
-      panel.progress(first - 1, pagesToScan);
+    for (let index = 0; index < chunks.length; index += 1) {
+      if (index === 0) {
+        panel.beginStep(`Scanning pages 1\u2013${chunks[0][chunks[0].length - 1]} of ${pagesToScan}\u2026`);
+      }
+      const scanned = await pendingScan;
+      // Start the next chunk's render+scan *before* appending this one …
+      pendingScan = index + 1 < chunks.length ? prepareChunk(chunks[index + 1]) : null;
 
-      // 1) render every page of the chunk concurrently
-      const rendered = await Promise.all(chunk.map(async (pageNumber) => {
-        const pdfPage = await source.getPage(pageNumber);
-        const sourcePageSize = pdfPage.getViewport({ scale: 1 });
-        const canvas = await renderPageToCanvas(pdfPage, profile);
-        return { pageNumber, canvas, sourcePageSize };
-      }));
-
-      // 2) scan the whole chunk at once — this is the expensive stage
-      await Promise.all(rendered.map((item, index) => enhanceCanvas(item.canvas, workers[index])));
-
-      // 3) encode and append strictly in page order
-      for (const item of rendered) {
+      // … then append this chunk strictly in page order (pdf-lib requires it).
+      for (const item of scanned) {
         const keepPreview = canKeepThumbnail(pageImages.length);
         const preview = await appendPage(output, item.canvas, {
           pageMode: profile.pageMode,
@@ -115,7 +127,7 @@ export async function runOnDevicePdfScan(file, pageLimit, panel, profile = PDF_P
         });
         if (keepPreview) pageImages.push(preview);
         panel.page(item.pageNumber);
-        panel.finishStep(`Page ${item.pageNumber} scanned`);
+        panel.done(`Page ${item.pageNumber} of ${pagesToScan} scanned`);
         panel.progress(item.pageNumber, pagesToScan);
         // Free the bitmap now that the page is embedded: full-size A4
         // canvases are the scan's biggest memory peak.
@@ -132,6 +144,9 @@ export async function runOnDevicePdfScan(file, pageLimit, panel, profile = PDF_P
     logger.info("on-device scan finished", { pages: pagesToScan, worker: workerSource });
     return { bytes, pageImages };
   } finally {
+    // A scan started but never awaited (the append loop threw) must not raise
+    // an unhandled rejection on its own.
+    if (pendingScan) pendingScan.catch(() => {});
     // The warm engine workers must survive (next scan reuses the pool); a
     // per-scan fallback worker is disposable.
     releaseWorkers(workers, { keepAlive: profile.useEngineLoader });
