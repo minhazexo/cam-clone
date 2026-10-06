@@ -11,13 +11,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  frontend-parity:
-    name: Vendor check + parity harnesses
+  frontend:
+    name: Frontend assets + JS tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install JS tooling
+        run: bun install
+
+      - name: Required vendored/worker artifacts exist
+        run: bun run check
+
+      - name: Frontend unit + asset-contract tests
+        run: bun run test:js
+
+  parity:
+    name: Python ↔ JS parity
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
+      # `bun run parity` is the same entrypoint developers use locally; it
+      # shells out to node for the three harnesses.
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -26,19 +48,15 @@ jobs:
         with:
           node-version: 20
 
-      - name: Install JS dependencies
-        run: bun install
-
-      - name: Vendor artifacts present
-        run: bun run check
-
-      - name: Parity (worker, geometry, full)
+      # The harnesses require only fs/path and the committed vendor files, so
+      # there is no install step — which keeps this job fast and stable.
+      - name: Worker, geometry and full-pipeline parity
         run: bun run parity
 
   backend:
-    name: Python smoke + compile
+    name: Python tests + smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
 
@@ -50,21 +68,28 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Byte-compile
-        run: python -m compileall -q app.py api RScan/Python/scan
+      - name: Byte-compile every Python entry point
+        run: python -m compileall -q app.py api rscan RScan/Python/scan scripts
 
-      - name: Import app (smoke)
-        run: python -c "from app import app; c = app.test_client(); r = c.get('/api/health'); assert r.status_code == 200 and r.get_json()['status'] == 'ok', r.data"
+      - name: Unit + integration tests
+        run: python -m unittest discover -s tests -t . -p "test_*.py"
 
-      - name: Pages render
+      - name: Flask smoke (health + pages)
         run: |
           python - <<'PY'
           from app import app
-          c = app.test_client()
+          client = app.test_client()
+
+          health = client.get("/api/health")
+          assert health.status_code == 200, health.status_code
+          assert health.get_json()["status"] == "ok"
+
           for path in ("/", "/scan-pdf"):
-              r = c.get(path)
-              assert r.status_code == 200, (path, r.status_code)
-              html = r.get_data(as_text=True)
+              response = client.get(path)
+              assert response.status_code == 200, (path, response.status_code)
+              html = response.get_data(as_text=True)
               assert "uploadZone" in html, path
+              assert "stepLog" in html, path
+              assert "resultsGrid" in html, path
           print("pages ok")
           PY

@@ -1,0 +1,10 @@
+# Default owner for everything in this repository.
+*                       @minhazexo
+
+# The Python <-> JavaScript parity contract is the most sensitive part of the
+# codebase: changes here need a parity run and a mirrored change on the other
+# side (see AGENTS.md -> "Important invariants").
+/rscan/scanner/         @minhazexo
+/static/js/workers/     @minhazexo
+/tests/parity/          @minhazexo
+/tests/fixtures/        @minhazexo

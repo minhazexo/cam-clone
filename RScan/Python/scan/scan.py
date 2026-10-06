@@ -1,5 +1,25 @@
+"""LEGACY module — original RScan scan modes (GCMODE / RMODE / SMODE).
+
+Status: **legacy, still functional**. Kept because the mode implementations
+(and their module globals) are the historical origin of the photometry now
+used by ``rscan.scanner.photometry``, and because the functional helpers
+``scan_image`` / ``scan_photo_auto`` are still a convenient fallback.
+
+Not used by the web product: the server pipeline calls
+``rscan.scanner.pipeline.scan_photo_to_reference``. Do not extend this file;
+add behaviour to ``rscan/scanner/`` instead (and mirror it in the JS worker if
+it is parity-relevant).
+"""
+
 import cv2 as cv
 import numpy as np
+
+try:  # run by path: python RScan/Python/scan/scan.py --input x.jpg
+	from _compat import ensure_project_root_on_path  # noqa: F401
+except ModuleNotFoundError:  # imported as ``RScan.Python.scan.scan``
+	from ._compat import ensure_project_root_on_path  # type: ignore[no-redef]
+
+ensure_project_root_on_path()
 
 '''
  Function to map values in range [in_min, in_max] to the range [out_min, out_max]
@@ -162,12 +182,12 @@ def scan_image(image, mode="GCMODE", kSize=51, blackPoint=66, whitePoint=160):
 
 
 def scan_photo_auto(image, **kwargs):
-	"""Reference-quality scan with geometry fix (see auto_scan.py).
+	"""Reference-quality scan with geometry fix (``rscan.scanner.pipeline``).
 
-	Falls back to scan_image(GCMODE) if auto_scan is unavailable.
+	Falls back to scan_image(GCMODE) if the pipeline is unavailable.
 	"""
 	try:
-		from auto_scan import scan_photo_to_reference
+		from rscan.scanner.pipeline import scan_photo_to_reference
 		return scan_photo_to_reference(image, **kwargs)
 	except Exception:
 		return scan_image(image, mode="GCMODE")

@@ -10,18 +10,29 @@
 
 - [ ] Bug fix
 - [ ] New feature
-- [ ] Pipeline / scan-quality change
-- [ ] Docs or tooling
+- [ ] Pipeline / scan-quality change (parity-sensitive)
 - [ ] Refactor (no behavior change)
+- [ ] Docs or tooling
 
 ## How was this tested?
 
 <!-- Commands run, pages exercised, sample files used -->
 
-- [ ] `bun run check`
-- [ ] `bun run parity` (required for pipeline / worker / geometry changes)
-- [ ] `python -m compileall -q app.py api RScan/Python/scan` (Python changes)
+- [ ] `bun run test` (assets + parity + JS + Python)
+- [ ] Individually, if relevant:
+  - [ ] `bun run check`
+  - [ ] `bun run parity` (required for `rscan/scanner/**` or `static/js/workers/**`)
+  - [ ] `bun run test:js`
+  - [ ] `bun run test:python`
+- [ ] `python -m compileall -q app.py api rscan RScan/Python/scan scripts` (Python changes)
 - [ ] Manual UI check on `/` and `/scan-pdf` (frontend changes)
+
+## For pipeline / worker changes
+
+- [ ] The same change was mirrored in both implementations
+      (`rscan/scanner/**` ↔ `static/js/workers/**`)
+- [ ] Fixture changes (if any) are intentional and explained below
+- [ ] Expected MAD / sharpness impact:
 
 ## Screenshots (UI changes)
 
@@ -29,7 +40,10 @@
 
 ## Checklist
 
-- [ ] I read [CONTRIBUTING.md](../CONTRIBUTING.md)
-- [ ] No secrets, `.env`, large binaries, or generated `docs/` included
+- [ ] I read [CONTRIBUTING.md](../CONTRIBUTING.md) and [AGENTS.md](../AGENTS.md)
+- [ ] Route handlers stayed thin (validate → service → response)
+- [ ] No secrets, `.env`, or large binaries included
+- [ ] Docs updated (`docs/API.md` for API changes, `AGENTS.md` CHANGE MAP for
+      new modules, `docs/*` for pipeline changes)
 - [ ] CHANGELOG updated under **Unreleased** (user-visible changes)
 - [ ] PR title is clear and imperative

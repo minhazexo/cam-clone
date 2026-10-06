@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}RScan — Smart Document Scanner{% endblock %}</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='2' width='24' height='28' rx='3' fill='none' stroke='%234f46e5' stroke-width='2.5'/%3E%3Ccircle cx='12' cy='25' r='2' fill='%234f46e5'/%3E%3C/svg%3E">
+    <meta name="description" content="{% block description %}RScan — a CamScanner-style smart document scanner. Upload a PDF or images to get clean, high-quality scanned output instantly.{% endblock %}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    {% block head %}{% endblock %}
+</head>
+<body>
+<div class="bg-mesh" aria-hidden="true"></div>
+
+<!--
+  Header. `active_page` is set by the page routes (rscan/web/routes/pages.py)
+  and drives the nav highlight + aria-current. `tagline` is page-specific copy.
+-->
+<header class="header">
+    <div class="header-inner">
+        <a class="logo" href="/" aria-label="RScan home">
+            <svg class="logo-icon" viewBox="0 0 32 32" fill="none" aria-hidden="true"><rect x="4" y="2" width="24" height="28" rx="3" stroke="currentColor" stroke-width="2.2"/><line x1="9" y1="9" x2="23" y2="9" stroke="currentColor" stroke-width="1.8" opacity=".4"/><line x1="9" y1="14" x2="23" y2="14" stroke="currentColor" stroke-width="1.8" opacity=".4"/><line x1="9" y1="19" x2="18" y2="19" stroke="currentColor" stroke-width="1.8" opacity=".4"/><circle cx="12" cy="25" r="1.5" fill="currentColor" opacity=".4"/></svg>
+            <span class="logo-text">RScan</span>
+        </a>
+        <nav class="nav" aria-label="Primary">
+            <a class="nav-link {% if active_page == 'images' %}active{% endif %}" href="/"{% if active_page == 'images' %} aria-current="page"{% endif %}>Scan Images</a>
+            <a class="nav-link {% if active_page == 'pdf' %}active{% endif %}" href="/scan-pdf"{% if active_page == 'pdf' %} aria-current="page"{% endif %}>Scan PDF</a>
+        </nav>
+        <p class="tagline">{{ tagline|default('Smart Document Scanner — Like CamScanner') }}</p>
+    </div>
+</header>
+
+<main class="main">
+    {% block content %}{% endblock %}
+</main>
+
+{% include "partials/footer.html" %}
+{% include "partials/page_limit_modal.html" %}
+
+<!--
+  Shared frontend runtime (pdf.js + pdf-lib globals), built by `bun run build`.
+  Page entrypoints are ES modules listed after it, so they can rely on
+  `window.pdfjsLib` / `window.PDFLib` being defined first.
+-->
+<script src="{{ url_for('static', filename='vendor/runtime.js') }}" type="module"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

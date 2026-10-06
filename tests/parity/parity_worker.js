@@ -2,7 +2,7 @@ global.self=global;
 /* Step 2 parity harness: worker photometry vs Python photometry bytes.
  *
  * Loads static/vendor/opencv.js (absolute path, init via cv.then), sets
- * globalThis.cv, requires static/js/scan-worker-v2.js, runs processImage on
+ * globalThis.cv, requires static/js/workers/scan-worker-v2.js, runs processImage on
  * both fixture .rgb inputs and gates:
  *   - mean-abs-diff vs exp .rgb <= 3.0
  *   - output dims equal fixture dims
@@ -21,10 +21,10 @@ global.self=global;
 const fs = require('fs');
 const path = require('path');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT = path.resolve(__dirname, '..', '..');
 const FIX = path.join(ROOT, 'tests', 'fixtures');
 const OPENCV_ABS = path.join(ROOT, 'static', 'vendor', 'opencv.js');
-const WORKER_ABS = path.join(ROOT, 'static', 'js', 'scan-worker-v2.js');
+const WORKER_ABS = path.join(ROOT, 'static', 'js', 'workers', 'scan-worker-v2.js');
 
 // Full-pipeline Python baselines from scripts/gen_fixtures.py (reference only).
 const FULL_BASELINES = {

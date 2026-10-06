@@ -1,56 +1,56 @@
-# Python
+# ── Python ────────────────────────────────────────────────────────────────
 __pycache__/
 *.pyc
 .env
 .env.prod
 rscan_uploads/
 
-# IDE / editor
+# ── IDE / editor ──────────────────────────────────────────────────────────
 .idea/
 .vscode/
 *.swp
 *.swo
 
-# Node / Bun
+# ── Node / Bun ────────────────────────────────────────────────────────────
 node_modules/
 dist/
 build/
 *.log
 
-# Build artifacts
+# ── Generated / vendored build outputs ───────────────────────────────────
 graphify-out/
+static/vendor/*.map
+scanned_*.pdf
+
+# ── Local-only assets (not part of the repository) ───────────────────────
+# The reference scan the pipeline was tuned against, plus local experiments.
 Work Images/
 RScan/Java/
 RScan/Node/
 RScan/Python/crop/
 RScan/wiki_images/
-static/vendor/*.map
-
-# Test / debug / generated files
-app.js.dump
-index_check.html
-scan_pdf_test_response.json
-test_scan.py
-test_scan_crop.py
-compare_scan.py
-quality_gate.py
-scan.py
-_digest.txt
-_graph_inspect.txt
-_graphify_explain.txt
-scanned_*.pdf
-
-# Local test PDFs (never commit)
-pdf files/
-
-# Local deep-dive docs (never commit)
-docs/
-
-# Virtualenv (already ignored via .venv/.gitignore, belt-and-suspenders)
-.venv/
-
-# Local test images / outputs (never commit)
 test image.jpg
 test image output after scanning/
 IMG-*.jpg
 verification-report.txt
+pdf files/
+.venv/
+
+# ── Local scratch files ──────────────────────────────────────────────────
+# Anchored to the repository root on purpose: bare names like "scan.py" or
+# "quality_gate.py" would also hide the real files under RScan/ and scripts/.
+/app.js.dump
+/index_check.html
+/scan_pdf_test_response.json
+/test_scan.py
+/test_scan_crop.py
+/compare_scan.py
+/quality_gate.py
+/scan.py
+/_digest.txt
+/_graph_inspect.txt
+/_graphify_explain.txt
+
+# ── Docs ─────────────────────────────────────────────────────────────────
+# docs/ is committed now (architecture, API, pipelines, testing, deployment).
+# Deep-dive scratch notes belong in local-only files instead.

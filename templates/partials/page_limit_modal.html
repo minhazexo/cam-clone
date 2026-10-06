@@ -1,0 +1,35 @@
+{#
+  Page-limit modal — shared by `/` and `/scan-pdf`.
+
+  Contract with static/js/ui/modal.js (do not rename ids):
+    pageLimitBackdrop   click outside closes (cancel)
+    pageLimitOptions    container; each `.page-opt-btn` carries data-limit
+                        (a number, or "all" for no limit)
+    pageLimitCancel     explicit cancel button
+#}
+<div class="modal-backdrop hidden" id="pageLimitBackdrop" role="dialog" aria-modal="true" aria-labelledby="pageLimitTitle">
+    <div class="modal">
+        <div class="modal-header">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+                <polyline points="14 2 14 8 20 8"/>
+                <line x1="9" y1="13" x2="15" y2="13"/>
+                <line x1="9" y1="17" x2="15" y2="17"/>
+            </svg>
+            <h2 class="modal-title" id="pageLimitTitle">How many pages to scan?</h2>
+        </div>
+        <p class="modal-subtitle">Choose how many pages from your PDF you want to process.</p>
+        <div class="modal-options" id="pageLimitOptions">
+            <button class="page-opt-btn" type="button" data-limit="10">10 pages</button>
+            <button class="page-opt-btn" type="button" data-limit="20">20 pages</button>
+            <button class="page-opt-btn" type="button" data-limit="30">30 pages</button>
+            <button class="page-opt-btn" type="button" data-limit="40">40 pages</button>
+            <button class="page-opt-btn" type="button" data-limit="50">50 pages</button>
+            <button class="page-opt-btn page-opt-all" type="button" data-limit="all">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 2a10 10 0 100 20A10 10 0 0012 2z"/><path d="M8 12h8M12 8v8"/></svg>
+                All Pages
+            </button>
+        </div>
+        <button class="btn btn-outline modal-cancel" id="pageLimitCancel" type="button">Cancel</button>
+    </div>
+</div>
