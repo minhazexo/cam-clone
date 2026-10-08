@@ -22,7 +22,7 @@
     "on-device"
   ],
   "scripts": {
-    "dev": "bun run build && sh -c 'PY=$(command -v python3 || command -v python) && exec \"$PY\" app.py'",
+    "dev": "bun run build && bun scripts/dev.ts",
     "build": "bun run scripts/build.ts",
     "check": "bun run scripts/check.ts",
     "parity": "node tests/parity/parity_worker.js && node tests/parity/parity_geometry.js && node tests/parity/parity_full.js && node tests/parity/parity_receipt.js",
