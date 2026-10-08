@@ -73,6 +73,10 @@ export function planPageChunks(total, size) {
  */
 export function enhanceCanvas(canvas, worker) {
   return new Promise((resolve, reject) => {
+    if (!worker) {
+      reject(new EngineUnavailableError("Scan worker pool ran out of workers for this page."));
+      return;
+    }
     const context = canvas.getContext("2d", { willReadFrequently: true });
     let imageData;
     try {

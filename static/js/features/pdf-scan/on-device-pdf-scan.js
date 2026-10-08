@@ -75,6 +75,13 @@ export async function runOnDevicePdfScan(file, pageLimit, panel, profile = PDF_P
   let poolSize = plan.workers;
   const firstAcquire = await acquireWorkers(profile, poolSize);
   let workers = firstAcquire.workers;
+  // The pool may warm fewer workers than requested (a spare can fail to
+  // compile its WASM engine). Drive batching off the actual pool from here
+  // on so `workers[index]` always exists.
+  poolSize = workers.length;
+  if (poolSize < 1) {
+    throw new EngineUnavailableError("Scan engine failed to start. Try again, or use the server scan.");
+  }
   const workerSource = firstAcquire.source;
   const output = await createOutputDocument();
   const pageImages = [];
@@ -97,7 +104,13 @@ export async function runOnDevicePdfScan(file, pageLimit, panel, profile = PDF_P
     }));
     // One in-flight message per worker: the pool scans this chunk alone, so
     // no worker ever receives a second request before answering the first.
-    await Promise.all(rendered.map((item, index) => enhanceCanvas(item.canvas, workers[index])));
+    // Sliced by the CURRENT pool size so a batch sized for an older, larger
+    // pool (see the engine-fault retry below) can never index past `workers`.
+    const stride = Math.max(1, workers.length);
+    for (let at = 0; at < rendered.length; at += stride) {
+      const slice = rendered.slice(at, at + stride);
+      await Promise.all(slice.map((item, index) => enhanceCanvas(item.canvas, workers[index])));
+    }
     return rendered;
   }
 
@@ -144,6 +157,20 @@ export async function runOnDevicePdfScan(file, pageLimit, panel, profile = PDF_P
         }
         poolSize = Math.max(1, poolSize - 1);
         workers = (await acquireWorkers(profile, poolSize)).workers;
+        // The fresh pool may hold fewer workers than requested, so sync to
+        // the actual pool and re-batch: `currentBatch` was sized for the
+        // old, larger pool and indexing it directly left `workers[index]`
+        // undefined (`Cannot set properties of undefined (setting
+        // 'onmessage')`). Rewind the cursor and take the head for the new
+        // pool; the tail is picked up by later `takeBatch()` calls.
+        poolSize = workers.length;
+        if (poolSize < 1) {
+          throw new EngineUnavailableError(
+            `${error.message}. The local scan could not recover \u2014 try again, or use the server scan.`);
+        }
+        cursor -= currentBatch.length;
+        if (cursor < 1) cursor = 1;
+        currentBatch = takeBatch();
         panel.done(`Scan engine faulted \u2014 restarting with ${poolSize} worker${poolSize === 1 ? "" : "s"}…`);
         pendingScan = prepareChunk(currentBatch);
         continue;

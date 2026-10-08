@@ -176,7 +176,10 @@ async function ensurePool(size) {
   const want = Math.max(1, Math.floor(size || 1));
   // The light fallback worker is a last resort: run it alone (legacy path).
   if (want > 1 && primary.source === "v2-full") {
-    while (spareWorkers.length + 1 < want && !(await spawnSpare())) break;
+    while (spareWorkers.length + 1 < want) {
+      const warmed = await spawnSpare();
+      if (!warmed) break;
+    }
   }
   return {
     source: primary.source,
